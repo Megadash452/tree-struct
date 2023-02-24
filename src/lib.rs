@@ -1,6 +1,14 @@
+#![feature(arbitrary_self_types)]
 mod node;
-use std::{rc::Rc, fmt::Debug};
-pub use node::*;
+mod util;
+
+use std::{
+    rc::Rc,
+    cell::{RefCell, Ref, RefMut},
+    fmt::Debug
+};
+pub use node::{Node, NodeBuilder};
+use node::*;
 
 
 /// A Tree of [`Node`]s.
@@ -11,7 +19,7 @@ pub use node::*;
 /// When a [`Node`] method *asks* for this type as argument, it means it is **taking ownership** of the [`Node`]s.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Tree<T> {
-    pub root: Rc<Node<T>>
+    pub root: StrongNode<T>
 }
 impl<T> Tree<T> {
     #[inline]
@@ -19,18 +27,16 @@ impl<T> Tree<T> {
         NodeBuilder::new(content)
     }
 
-    pub fn root(&self) -> &Node<T> {
-        self.root.as_ref()
+    pub fn root(&self) -> Ref<Node<T>> {
+        self.root.borrow()
     }
-    pub fn root_mut(&mut self) -> &mut Node<T> {
-        unsafe {
-            &mut *(Rc::as_ptr(&self.root) as *mut Node<T>)
-        }
+    pub fn root_mut(&mut self) -> RefMut<Node<T>> {
+        self.root.borrow_mut()
     }
 
     /// [`Appends child`](Node::append_child()) to **root**.
     pub fn append_child(&mut self, child: impl Into<Tree<T>>) {
-        self.root.append_child(child)
+        Node::append_child(Rc::clone(&self.root), child)
     }
 }
 impl<T> From<NodeBuilder<T>> for Tree<T> {
@@ -39,14 +45,21 @@ impl<T> From<NodeBuilder<T>> for Tree<T> {
         builder.build()
     }
 }
-impl<T> From<Rc<Node<T>>> for Tree<T> {
-    fn from(root: Rc<Node<T>>) -> Self {
+impl<T> From<StrongNode<T>> for Tree<T> {
+    /// Get a subtree, and the [`Node`] will have 1 more owner.
+    fn from(root: StrongNode<T>) -> Self {
         Tree { root }
+    }
+}
+impl<T> From<&StrongNode<T>> for Tree<T> {
+    /// Create a subtree, and the [`Node`] will have 1 more owner.
+    fn from(root: &StrongNode<T>) -> Self {
+        Tree { root: Rc::clone(root) }
     }
 }
 impl <T: Clone> Tree<T> {
     /// See [`Node::clone_deep()`].
     pub fn clone_deep(&self) -> Tree<T> {
-        self.root.clone_deep()
+        self.root.borrow().clone_deep()
     }
 }
