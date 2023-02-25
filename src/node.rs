@@ -64,21 +64,21 @@ impl<T> NodeBuilder<T> {
             children: vec![]
         })));
 
-        tree.root_mut().children = Self::build_children(tree.root_mut(), self.children);
+        tree.root_mut().children = Self::build_children(&*tree.root, self.children);
 
         tree
     }
 
-    fn build_children(parent: *mut Node<T>, children: Vec<NodeBuilder<T>>) -> Vec<ChildNode<T>> {
+    fn build_children(parent: ParentNode<T>, children: Vec<NodeBuilder<T>>) -> Vec<ChildNode<T>> {
         children.into_iter()
             .map(|builder| {
-                let mut child = Box::new(Node {
+                let mut child = Box::new(UnsafeCell::new(Node {
                     content: builder.content,
                     parent: Some(parent),
                     children: vec![]
-                });
+                }));
 
-                child.as_mut().children = Self::build_children(&mut *child.as_mut(), builder.children);
+                child.get_mut().children = Self::build_children(&mut *child.as_mut(), builder.children);
 
                 child
             })
@@ -89,7 +89,7 @@ impl<T> NodeBuilder<T> {
 
 #[derive(Default)]
 pub struct Node<T> {
-    parent: Option<*mut Self>,
+    parent: Option<ParentNode<T>>,
     children: Vec<ChildNode<T>>,
     pub content: T,
 }
@@ -99,11 +99,14 @@ impl<T> Node<T> {
         NodeBuilder::new(content)
     }
 
-    pub fn children(&self) -> &[ChildNode<T>] { // TODO: return &[&Self]
-        self.children.as_slice()
+    /// Holds references to each **child**.
+    pub fn children<'a>(&'a self) -> Vec<&'a Self> {
+        self.children.iter()
+            .map(|child| unsafe { &*child.get() })
+            .collect()
     }
     pub fn parent(&self) -> Option<&Self> {
-        self.parent.map(|p| unsafe { &*p })
+        self.parent.map(|p| unsafe { &*UnsafeCell::raw_get(p) })
     }
 
 
@@ -121,33 +124,36 @@ impl<T> Node<T> {
 
         false
     }
-    fn find_self<'a>(&self, mut iter: impl Iterator<Item = &'a ChildNode<T>>) -> Option<&'a Self> {
-        // let mut iter = iter.map(|sib| unsafe { &*sib.get() });
+    fn find_self<'a>(&self, iter: impl Iterator<Item = &'a ChildNode<T>>) -> Option<&'a Self> {
+        let mut iter = iter.map(|sib| unsafe { &*sib.get() });
         iter.find(|sib| self.is_same_as(sib));
-        iter.next().map(|sib| &**sib)
+        iter.next()//.map(|sib| &**sib)
     } 
 
 
     /// Returns the [`Node`] immediately following this one in the **parent**'s [`children`](Node::children).
     /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *last* child of the **parent**.
     pub fn next_sibling(&self) -> Option<&Self> {
-        self.find_self(unsafe { &*self.parent? }.children.iter())
+        self.find_self(self.parent()?.children.iter())
     }
     /// Returns the [`Node`] immediately preceeding this one in the **parent**'s [`children`](Node::children).
     /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *first* child of the **parent**.
     pub fn prev_sibling(&self) -> Option<&Self> {
-        self.find_self(unsafe { &*self.parent? }.children.iter().rev())
+        self.find_self(self.parent()?.children.iter().rev())
     }
 
     /// Pushes the **child** to `this` [`Node`]'s *children*.
-    pub fn append_child(&self, child: Tree<T>) {
-        // let mut child: Box<Self> = unsafe {
-        //     std::mem::transmute(&child.root)
-        // };
-        // child.parent = Some(self);
+    /// Does nothing if `self` is **child**.
+    pub fn append_child(&mut self, mut child: Tree<T>) {
+        if self.is_same_as(child.root()) {
+            return
+        }
 
-        // self.children.push(child)
-        todo!()
+        child.root.get_mut().parent = Some(unsafe {
+            std::mem::transmute(self as *const Self)
+        });
+
+        self.children.push(child.root)
     }
 
     /// If **self** [`is_same_as`](Node::is_same_as()) **descendant**,
@@ -167,12 +173,12 @@ impl<T> Node<T> {
             return None
         }
 
-        let parent = unsafe { &mut *descendant.parent.unwrap() };
+        let parent = unsafe { &mut *UnsafeCell::raw_get(descendant.parent.unwrap()) };
         
         // Find the index of the node to be removed in its parent's children list
         let mut index = 0;
         for child in &parent.children {
-            if descendant.is_same_as(child) {
+            if descendant.is_same_as(unsafe { &*child.get() }) {
                 break
             }
             index += 1
@@ -267,54 +273,30 @@ impl <T: Clone> Node<T> {
     pub fn clone_deep(&self) -> Tree<T> {
         let mut tree = Tree::from(Box::new(UnsafeCell::new(self.clone())));
 
-        tree.root_mut().children = self.clone_children_deep();
+        tree.root_mut().children = self.clone_children_deep(&*tree.root);
         
         tree
     }
-    fn clone_children_deep(&self) -> Vec<ChildNode<T>> {
+    fn clone_children_deep(&self, parent: ParentNode<T>) -> Vec<ChildNode<T>> {
         self.children.iter()
+            .map(|node| unsafe { &*node.get() })
             .map(|node| {
-                let mut child = node.clone();
-                child.as_mut().children = node.clone_children_deep();
+                let mut child = Box::new(UnsafeCell::new(node.clone()));
+                child.get_mut().parent = Some(parent);
+                child.get_mut().children = node.clone_children_deep(&*child);
                 child
             })
             .collect()
     }
 }
 
-// impl<T> Deref for Node<T> {
-//     type Target = T;
-// 
-//     fn deref(&self) -> &Self::Target {
-//         &self.content
-//     }
-// }
 impl<T: PartialEq /*+ ChildrenEq*/> PartialEq for Node<T> {
     fn eq(&self, other: &Self) -> bool {
         self.content == other.content
         // TODO: some node types dont care if they have the same children. Add a trait for this. if does not implement the trait, only compare Node::content
-        // && self.children == other.children
+        && self.children() == other.children()
     }
 }
-// impl<T: PartialEq> PartialEq<StrongNode<T>> for Node<T> {
-//     /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
-//     fn eq(&self, other: &StrongNode<T>) -> bool {
-//         self.eq(&*other.borrow())
-//     }
-// }
-// impl<T: PartialEq> PartialEq<Ref<'_, Node<T>>> for Node<T> {
-//     /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
-//     fn eq(&self, other: &Ref<'_, Node<T>>) -> bool {
-//         self.eq(&**other)
-//     }
-// }
-// impl<T: PartialEq, O> PartialEq<O> for Node<T>
-// where O: AsRef<Self> {
-//     /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
-//     fn eq(&self, other: &O) -> bool {
-//         self.eq(other.as_ref())
-//     }
-// }
 impl<T: Eq> Eq for Node<T> {
 }
 impl<T: Debug> Debug for Node<T> {

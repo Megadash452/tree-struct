@@ -4,7 +4,8 @@ use std::{fmt::Debug, cell::UnsafeCell};
 pub use node::{Node, NodeBuilder};
 
 type RootNode<T> = Box<UnsafeCell<Node<T>>>; // TODO: Pin
-type ChildNode<T> = Box<Node<T>>;
+type ChildNode<T> = RootNode<T>;
+type ParentNode<T> = *const UnsafeCell<Node<T>>;
 
 
 /// A Tree of [`Node`]s.

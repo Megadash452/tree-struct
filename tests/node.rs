@@ -41,7 +41,7 @@ fn clone() {
     assert!(!clone.is_same_as(target));
     assert_eq!(clone.content, target.content);
     assert!(clone.parent().is_none());
-    assert_eq!(clone.children(), vec![]);
+    assert_eq!(clone.children(), Vec::<&Node<_>>::new());
 
     // Deep clone
     let clone = target.clone_deep();
@@ -81,13 +81,13 @@ fn detach() {
 
 #[test]
 fn append_child() {
-    let tree = Node::builder("parent")
+    let mut tree = Node::builder("parent")
         .child(Node::builder("child a"))
         .child(Node::builder("child b")
             .child(Node::builder("child d")))
         .child(Node::builder("child c"))
         .build();
-    let root = tree.root();
+    let root = tree.root_mut();
 
     // -- Append a new node.
     let new = Node::builder("child e").build();
@@ -99,7 +99,7 @@ fn append_child() {
     root.append_child(detached);
     // assert!(root.children().last().unwrap().is_same_as(target));
     assert_eq!(&**root.children().last().unwrap(), Node::builder("child d").build().root());
-    assert_eq!(root.children()[1].children(), vec![]);
+    assert_eq!(root.children()[1].children(), Vec::<&Node<_>>::new());
 
     // -- Append a node from another tree.
     let other_tree = Node::builder("other parent")
@@ -110,9 +110,7 @@ fn append_child() {
     root.append_child(other_tree.root().detach_descendant(target).unwrap());
     dbg!(target);
     assert!(root.children().last().unwrap().is_same_as(target));
-    assert_eq!(*other_tree.root().children(), vec![]);
-
-    // TODO: append self? root.append_child(tree);
+    assert_eq!(other_tree.root().children(), Vec::<&Node<_>>::new());
 
     // -- End
     assert_eq!(tree,
