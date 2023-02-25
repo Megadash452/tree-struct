@@ -58,7 +58,7 @@ impl<T> NodeBuilder<T> {
     /// The children will be made into [`Node`]s with the proper **parent**.
     /// All of the children will be put into [`Reference Counted Pointer`](Rc)s recursively.
     pub fn build(self) -> Tree<T> {
-        let mut tree = Tree::from(Box::new(UnsafeCell::new(Node {
+        let mut tree = Tree::from(Box::pin(UnsafeCell::new(Node {
             content: self.content,
             parent: None,
             children: vec![]
@@ -69,16 +69,16 @@ impl<T> NodeBuilder<T> {
         tree
     }
 
-    fn build_children(parent: ParentNode<T>, children: Vec<NodeBuilder<T>>) -> Vec<ChildNode<T>> {
+    fn build_children(parent: ParentRef<T>, children: Vec<NodeBuilder<T>>) -> Vec<ChildNode<T>> {
         children.into_iter()
             .map(|builder| {
-                let mut child = Box::new(UnsafeCell::new(Node {
+                let child = Box::pin(UnsafeCell::new(Node {
                     content: builder.content,
                     parent: Some(parent),
                     children: vec![]
                 }));
 
-                child.get_mut().children = Self::build_children(&mut *child.as_mut(), builder.children);
+                unsafe { &mut *child.get() }.children = Self::build_children(&*child, builder.children);
 
                 child
             })
@@ -89,7 +89,7 @@ impl<T> NodeBuilder<T> {
 
 #[derive(Default)]
 pub struct Node<T> {
-    parent: Option<ParentNode<T>>,
+    parent: Option<ParentRef<T>>,
     children: Vec<ChildNode<T>>,
     pub content: T,
 }
@@ -149,7 +149,7 @@ impl<T> Node<T> {
             return
         }
 
-        child.root.get_mut().parent = Some(unsafe {
+        child.root_mut().parent = Some(unsafe {
             std::mem::transmute(self as *const Self)
         });
 
@@ -185,10 +185,8 @@ impl<T> Node<T> {
         }
 
         if index < parent.children.len() {
-            let node: Box<UnsafeCell<Self>> = unsafe {
-                std::mem::transmute(parent.children.remove(index))
-            };
-            let mut tree = Tree::from(node);
+            // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
+            let mut tree = Tree::from(parent.children.remove(index));
             tree.root_mut().parent = None;
             Some(tree)
         } else {
@@ -271,19 +269,20 @@ impl <T: Clone> Node<T> {
     /// 
     /// For a method that clones the [`Node`] but *not* its subtree, see [`Node::clone`].
     pub fn clone_deep(&self) -> Tree<T> {
-        let mut tree = Tree::from(Box::new(UnsafeCell::new(self.clone())));
+        let mut tree = Tree::from(Box::pin(UnsafeCell::new(self.clone())));
 
         tree.root_mut().children = self.clone_children_deep(&*tree.root);
         
         tree
     }
-    fn clone_children_deep(&self, parent: ParentNode<T>) -> Vec<ChildNode<T>> {
+    fn clone_children_deep(&self, parent: ParentRef<T>) -> Vec<ChildNode<T>> {
         self.children.iter()
             .map(|node| unsafe { &*node.get() })
             .map(|node| {
-                let mut child = Box::new(UnsafeCell::new(node.clone()));
-                child.get_mut().parent = Some(parent);
-                child.get_mut().children = node.clone_children_deep(&*child);
+                let child = Box::pin(UnsafeCell::new(node.clone()));
+                let mut_child = unsafe { &mut *child.get() };
+                mut_child.parent = Some(parent);
+                mut_child.children = node.clone_children_deep(&*child);
                 child
             })
             .collect()

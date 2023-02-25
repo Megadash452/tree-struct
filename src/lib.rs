@@ -1,11 +1,11 @@
 mod node;
 
-use std::{fmt::Debug, cell::UnsafeCell};
+use std::{fmt::Debug, cell::UnsafeCell, pin::Pin};
 pub use node::{Node, NodeBuilder};
 
-type RootNode<T> = Box<UnsafeCell<Node<T>>>; // TODO: Pin
+type RootNode<T> = Pin<Box<UnsafeCell<Node<T>>>>;
 type ChildNode<T> = RootNode<T>;
-type ParentNode<T> = *const UnsafeCell<Node<T>>;
+type ParentRef<T> = *const UnsafeCell<Node<T>>;
 
 
 /// A Tree of [`Node`]s.
@@ -28,13 +28,8 @@ impl<T> Tree<T> {
         unsafe { &*self.root.get() }
     }
     pub fn root_mut(&mut self) -> &mut Node<T> {
-        self.root.as_mut().get_mut()
+        unsafe { &mut *self.root.get() }
     }
-
-    // /// [`Appends child`](Node::append_child()) to **root**.
-    // pub fn append_child(&mut self, child: impl Into<Tree<T>>) {
-    //     Node::append_child(Rc::clone(&self.root), child)
-    // }
 }
 impl <T: Clone> Tree<T> {
     /// See [`Node::clone_deep()`].
