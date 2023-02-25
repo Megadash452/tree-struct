@@ -47,7 +47,7 @@ pub type Strong<T> = Rc<RefCell<T>>;
 #[derive(Default)]
 pub struct NodeBuilder<T> {
     pub content: T,
-    pub children: Vec<NodeBuilder<T>>
+    pub children: Vec<Self>
 }
 impl<T> NodeBuilder<T> {
     /// New [`NodeBuilder`] using [Builder Pattern](https://rust-unofficial.github.io/patterns/patterns/creational/builder.html).
@@ -63,7 +63,32 @@ impl<T> NodeBuilder<T> {
     /// The children will be made into [`Node`]s with the proper **parent**.
     /// All of the children will be put into [`Reference Counted Pointer`](Rc)s recursively.
     pub fn build(self) -> Tree<T> {
-        util::make_node(None, self).into()
+        let mut tree = Tree::from(Rc::new(RefCell::new(Node {
+            content: self.content,
+            parent: None,
+            children: vec![]
+        })));
+    
+        tree.root_mut().children = Self::build_children(Rc::downgrade(&tree.root), self.children);
+    
+        tree
+    }
+    fn build_children(parent: WeakNode<T>, children: Vec<Self>) -> Vec<StrongNode<T>> {
+        children.into_iter()
+            .map(|builder| {
+                let mut child = Rc::new(RefCell::new(Node {
+                    content: builder.content,
+                    parent: Some(Weak::clone(&parent)),
+                    children: vec![]
+                }));
+
+                unsafe {
+                    Rc::get_mut_unchecked(&mut child)
+                }.get_mut().children = Self::build_children(Rc::downgrade(&child), builder.children);
+
+                child
+            })
+            .collect()
     }
 }
 
@@ -75,10 +100,6 @@ pub struct Node<T> {
     pub content: T,
 }
 impl<T> Node<T> {
-    // // New [`Node`] with no **children** or **parent**.
-    // pub fn new(content: T) -> Tree<T> {
-    //     Rc::new(Self { content, parent: None, children: vec![] }).into()
-    // }
     #[inline]
     pub fn builder(content: T) -> NodeBuilder<T> {
         NodeBuilder::new(content)
@@ -88,8 +109,7 @@ impl<T> Node<T> {
         Ref::map(Ref::clone(self), |n| n.children.as_slice())
     }
     pub fn parent<'a>(self: &Ref<'a, Self>) -> Option<Ref<'a, Self>> {
-        self.parent.as_ref().and_then(Weak::upgrade);//.map(|p| p.borrow());
-        todo!()
+        self.parent.as_ref().and_then(Weak::upgrade).map(|p| p.borrow())
     }
 
 
@@ -215,24 +235,6 @@ impl<T> Node<T> {
     //     }
     //
     //     Rc::clone(self).into()
-    // }
-
-    // TODO: should return None if self is root??
-    // /// Returns the *root* [`Node`], aka the first ancestor of this [`Node`].
-    // /// The root node is the one that has no **parent**.
-    // pub fn root(self: Rc<Self>) -> Option<Rc<Self>> {
-    //     let mut current = self;
-    //
-    //     while let Some(parent) = current.parent.as_ref()
-    //         .and_then(|parent| parent.upgrade())
-    //     {
-    //         current = parent
-    //     }
-    //
-    //     match current.parent {
-    //         Some(_) => None,
-    //         None => Some(current)
-    //     }
     // }
 
     #[inline]

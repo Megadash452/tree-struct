@@ -1,6 +1,6 @@
 #![feature(arbitrary_self_types)]
+#![feature(get_mut_unchecked)]
 mod node;
-mod util;
 
 use std::{
     rc::Rc,

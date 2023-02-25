@@ -133,25 +133,3 @@ fn append_child() {
     //         .build()
     // );
 }
-
-// #[test]
-// fn root_node() {
-//     let tree = NodeBuilder {
-//         content: "parent",
-//         children: vec![
-//             NodeBuilder {
-//                 content: "child a",
-//                 children: vec![
-//                     NodeBuilder {
-//                         content: "child b",
-//                         children: vec![]
-//                     }
-//                 ]
-//             }
-//         ]
-//     }.build();
-//     let root = tree.root();
-//
-//     let target = root.children()[0].children()[0].clone();
-//     assert!(target.root().is_same_as(root));
-// }
