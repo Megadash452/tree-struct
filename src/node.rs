@@ -1,9 +1,4 @@
-use std::rc::Weak;
 use super::*;
-
-pub type StrongNode<T> = Rc<RefCell<Node<T>>>;
-pub type WeakNode<T> = Weak<RefCell<Node<T>>>;
-pub type Strong<T> = Rc<RefCell<T>>;
 
 
 /// Helper struct to build a [`Tree`] of [`Node`]s.
@@ -63,83 +58,96 @@ impl<T> NodeBuilder<T> {
     /// The children will be made into [`Node`]s with the proper **parent**.
     /// All of the children will be put into [`Reference Counted Pointer`](Rc)s recursively.
     pub fn build(self) -> Tree<T> {
-        util::make_node(None, self).into()
+        let mut tree = Tree::from(Box::new(UnsafeCell::new(Node {
+            content: self.content,
+            parent: None,
+            children: vec![]
+        })));
+
+        tree.root_mut().children = Self::build_children(tree.root_mut(), self.children);
+
+        tree
+    }
+
+    fn build_children(parent: *mut Node<T>, children: Vec<NodeBuilder<T>>) -> Vec<ChildNode<T>> {
+        children.into_iter()
+            .map(|builder| {
+                let mut child = Box::new(Node {
+                    content: builder.content,
+                    parent: Some(parent),
+                    children: vec![]
+                });
+
+                child.as_mut().children = Self::build_children(&mut *child.as_mut(), builder.children);
+
+                child
+            })
+            .collect()
     }
 }
 
 
 #[derive(Default)]
 pub struct Node<T> {
-    pub parent: Option<WeakNode<T>>,
-    pub children: Vec<StrongNode<T>>,
+    parent: Option<*mut Self>,
+    children: Vec<ChildNode<T>>,
     pub content: T,
 }
 impl<T> Node<T> {
-    // // New [`Node`] with no **children** or **parent**.
-    // pub fn new(content: T) -> Tree<T> {
-    //     Rc::new(Self { content, parent: None, children: vec![] }).into()
-    // }
     #[inline]
     pub fn builder(content: T) -> NodeBuilder<T> {
         NodeBuilder::new(content)
     }
 
-    pub fn children<'a>(self: &Ref<'a, Self>) -> Ref<'a, [StrongNode<T>]> {
-        Ref::map(Ref::clone(self), |n| n.children.as_slice())
+    pub fn children(&self) -> &[ChildNode<T>] { // TODO: return &[&Self]
+        self.children.as_slice()
     }
-    pub fn parent<'a>(self: &Ref<'a, Self>) -> Option<Ref<'a, Self>> {
-        self.parent.as_ref().and_then(Weak::upgrade);//.map(|p| p.borrow());
-        todo!()
+    pub fn parent(&self) -> Option<&Self> {
+        self.parent.map(|p| unsafe { &*p })
     }
 
 
     /// Look at every ancestor of **other** until **self** is found. (Not recursive).
     fn has_descendant(&self, other: &Self) -> bool {
-        let mut ancestor = other.parent.as_ref().and_then(Weak::upgrade);
+        let mut ancestor = other.parent();
 
         while let Some(node) = ancestor
         {
-            if unsafe { self.is_same_as(&*RefCell::as_ptr(&node)) } {
+            if self.is_same_as(node) {
                 return true
             }
-            ancestor = node.borrow().parent.as_ref().and_then(Weak::upgrade)
+            ancestor = node.parent();
         }
 
         false
     }
+    fn find_self<'a>(&self, mut iter: impl Iterator<Item = &'a ChildNode<T>>) -> Option<&'a Self> {
+        // let mut iter = iter.map(|sib| unsafe { &*sib.get() });
+        iter.find(|sib| self.is_same_as(sib));
+        iter.next().map(|sib| &**sib)
+    } 
 
 
     /// Returns the [`Node`] immediately following this one in the **parent**'s [`children`](Node::children).
     /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *last* child of the **parent**.
-    pub fn next_sibling(self: &Ref<Self>) -> Option<StrongNode<T>> { // TODO: return borrowed node
-        let parent = self.parent.as_ref()?.upgrade()?;
-        let parent = parent.borrow();
-        let mut siblings = parent.children.iter();
-
-        siblings.find(|sib| self.is_same_as(&sib.borrow()));
-        siblings.next().map(Rc::clone)
+    pub fn next_sibling(&self) -> Option<&Self> {
+        self.find_self(unsafe { &*self.parent? }.children.iter())
     }
     /// Returns the [`Node`] immediately preceeding this one in the **parent**'s [`children`](Node::children).
     /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *first* child of the **parent**.
-    pub fn prev_sibling(self: &Ref<Self>) -> Option<StrongNode<T>> { // TODO: return borrowed node
-        let parent = self.parent.as_ref()?.upgrade()?;
-        let parent = parent.borrow();
-        let mut siblings = parent.children.iter().rev();
-
-        siblings.find(|sib| self.is_same_as(&sib.borrow()));
-        siblings.next().map(Rc::clone)
+    pub fn prev_sibling(&self) -> Option<&Self> {
+        self.find_self(unsafe { &*self.parent? }.children.iter().rev())
     }
 
-    /// Pushes the **child** to `this` [`Node`]'s *children*,
-    /// removing the **child** from it's previous parent.
-    pub fn append_child(this: Strong<Self>, child: impl Into<Tree<T>>) { // TODO: use self
-        let child = child.into();
-        let child = child.root;
-        if let Some(parent) = &child.borrow().parent {
-            parent.upgrade().unwrap().borrow_mut().detach_descendant(&mut child.borrow_mut());
-        }
-        child.borrow_mut().parent = Some(Rc::downgrade(&this));
-        this.borrow_mut().children.push(child);
+    /// Pushes the **child** to `this` [`Node`]'s *children*.
+    pub fn append_child(&self, child: Tree<T>) {
+        // let mut child: Box<Self> = unsafe {
+        //     std::mem::transmute(&child.root)
+        // };
+        // child.parent = Some(self);
+
+        // self.children.push(child)
+        todo!()
     }
 
     /// If **self** [`is_same_as`](Node::is_same_as()) **descendant**,
@@ -152,35 +160,31 @@ impl<T> Node<T> {
     /// 
     /// **Descendant** does not have to be `mut`.
     /// It should be enough to assert that the root node is `mut`, so by extension the descendant is also `mut`.
-    /// This is helpful because **descendantren** cannot be obtained as `mut` (*for now*).
-    pub fn detach_descendant(self: &RefMut<Self>, descendant: &mut RefMut<Self>) -> Option<Tree<T>> {
+    /// This is helpful because **descendant** cannot be obtained as `mut` (*for now*).
+    pub fn detach_descendant(&self, descendant: &Self) -> Option<Tree<T>> {
         if self.is_same_as(&*descendant)
         || !self.has_descendant(&*descendant) {
             return None
         }
 
-        let parent = descendant.parent.as_ref().unwrap().upgrade().unwrap();
-        // `parent.borrow_mut()` will necessarily panic.
-        // let parent = &mut parent.borrow_mut();
-        let parent = unsafe { &mut *RefCell::as_ptr(&parent) };
+        let parent = unsafe { &mut *descendant.parent.unwrap() };
         
         // Find the index of the node to be removed in its parent's children list
         let mut index = 0;
-        for c in &parent.children {
-            if unsafe { descendant.is_same_as(&*RefCell::as_ptr(&c)) } {
+        for child in &parent.children {
+            if descendant.is_same_as(child) {
                 break
             }
             index += 1
         }
 
         if index < parent.children.len() {
-            // `parent.child.borrow_mut()` will necessarily panic.
-            // parent.children.get_mut(index).unwrap().borrow_mut().parent = None;
-            descendant.parent = None;
-            let rtrn = Tree::from(parent.children.remove(index));
-            assert!(descendant.is_same_as(unsafe { &*RefCell::as_ptr(&rtrn.root) }));
-            Some(rtrn)
-            // Some(parent.children.remove(index).into())
+            let node: Box<UnsafeCell<Self>> = unsafe {
+                std::mem::transmute(parent.children.remove(index))
+            };
+            let mut tree = Tree::from(node);
+            tree.root_mut().parent = None;
+            Some(tree)
         } else {
             None
         }
@@ -246,12 +250,6 @@ impl<T: Clone> Clone for Node<T> {
     /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
     /// The resulting cloned [`Node`] will have no **parent** or **children**.
     /// 
-    /// The [`Node`] does not need to be returned in a [`Reference Counted Pointer`](std::rc::Rc)
-    /// because it has no [`children`](Node::children), which reference their parent with a [`Weak`].
-    /// 
-    /// Must be used as `Node::clone(self)` because if used as `self.clone()`
-    /// it will clone the [`Rc`] and not the [`Node`].
-    /// 
     /// For a method that clones the [`Node`] *and* its subtree, see [`Node::clone_deep`].
     fn clone(&self) -> Self {
         Self {
@@ -267,14 +265,20 @@ impl <T: Clone> Node<T> {
     /// 
     /// For a method that clones the [`Node`] but *not* its subtree, see [`Node::clone`].
     pub fn clone_deep(&self) -> Tree<T> {
-        let this = Rc::new(RefCell::new(self.clone()));
+        let mut tree = Tree::from(Box::new(UnsafeCell::new(self.clone())));
 
-        let children = self.children.iter()
-            .map(|child| child.borrow().clone_deep().root)
-            .collect::<Vec<_>>();
-        this.borrow_mut().children = children;
+        tree.root_mut().children = self.clone_children_deep();
         
-        this.into()
+        tree
+    }
+    fn clone_children_deep(&self) -> Vec<ChildNode<T>> {
+        self.children.iter()
+            .map(|node| {
+                let mut child = node.clone();
+                child.as_mut().children = node.clone_children_deep();
+                child
+            })
+            .collect()
     }
 }
 
@@ -289,42 +293,36 @@ impl<T: PartialEq /*+ ChildrenEq*/> PartialEq for Node<T> {
     fn eq(&self, other: &Self) -> bool {
         self.content == other.content
         // TODO: some node types dont care if they have the same children. Add a trait for this. if does not implement the trait, only compare Node::content
-        && self.children == other.children
+        // && self.children == other.children
     }
 }
-impl<T: PartialEq> PartialEq<StrongNode<T>> for Node<T> {
-    /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
-    fn eq(&self, other: &StrongNode<T>) -> bool {
-        self.eq(&*other.borrow())
-    }
-}
-impl<T: PartialEq> PartialEq<Ref<'_, Node<T>>> for Node<T> {
-    /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
-    fn eq(&self, other: &Ref<'_, Node<T>>) -> bool {
-        self.eq(&**other)
-    }
-}
-impl<T: PartialEq, O> PartialEq<O> for Node<T>
-where O: AsRef<Self> {
-    /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
-    fn eq(&self, other: &O) -> bool {
-        self.eq(other.as_ref())
-    }
-}
+// impl<T: PartialEq> PartialEq<StrongNode<T>> for Node<T> {
+//     /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
+//     fn eq(&self, other: &StrongNode<T>) -> bool {
+//         self.eq(&*other.borrow())
+//     }
+// }
+// impl<T: PartialEq> PartialEq<Ref<'_, Node<T>>> for Node<T> {
+//     /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
+//     fn eq(&self, other: &Ref<'_, Node<T>>) -> bool {
+//         self.eq(&**other)
+//     }
+// }
+// impl<T: PartialEq, O> PartialEq<O> for Node<T>
+// where O: AsRef<Self> {
+//     /// Compares this [`Node`] with the **root** [`Node`] of the [`Tree`].
+//     fn eq(&self, other: &O) -> bool {
+//         self.eq(other.as_ref())
+//     }
+// }
 impl<T: Eq> Eq for Node<T> {
 }
 impl<T: Debug> Debug for Node<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.content)
-            .field("parent", &self.parent.as_ref()
-                .and_then(Weak::upgrade)
-                .map(|p| &unsafe { &*RefCell::as_ptr(&p) }.content)
-            )
-            .field("children", &self.children.iter()
-                .map(|n| unsafe { &*RefCell::as_ptr(n) })
-                .collect::<Vec<_>>()
-            )
+            .field("parent", &self.parent.map(|p| unsafe { &*p }))
+            .field("children", &self.children)
             .finish()
     }
 }
