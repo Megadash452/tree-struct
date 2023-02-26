@@ -70,8 +70,7 @@ impl<T> NodeBuilder<T> {
 
         tree
     }
-
-    fn build_children(parent: ParentRef<T>, children: Vec<NodeBuilder<T>>) -> Vec<ChildNode<T>> {
+    fn build_children(parent: Parent<Node<T>>, children: Vec<Self>) -> Vec<Owned<Node<T>>> {
         children
             .into_iter()
             .map(|builder| {
@@ -92,8 +91,8 @@ impl<T> NodeBuilder<T> {
 
 #[derive(Default)]
 pub struct Node<T> {
-    parent: Option<ParentRef<T>>,
-    children: Vec<ChildNode<T>>,
+    parent: Option<Parent<Self>>,
+    children: Vec<Owned<Self>>,
     pub content: T,
 }
 impl<T> Node<T> {
@@ -126,7 +125,7 @@ impl<T> Node<T> {
 
         false
     }
-    fn find_self<'a>(&self, iter: impl Iterator<Item = &'a ChildNode<T>>) -> Option<&'a Self> {
+    fn find_self_next<'a>(&self, iter: impl Iterator<Item = &'a Owned<Self>>) -> Option<&'a Self> {
         let mut iter = iter.map(|sib| unsafe { &*sib.get() });
         iter.find(|sib| self.is_same_as(sib));
         iter.next()
@@ -135,23 +134,18 @@ impl<T> Node<T> {
     /// Returns the [`Node`] immediately following this one in the **parent**'s [`children`](Node::children).
     /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *last* child of the **parent**.
     pub fn next_sibling(&self) -> Option<&Self> {
-        self.find_self(self.parent()?.children.iter())
+        self.find_self_next(self.parent()?.children.iter())
     }
     /// Returns the [`Node`] immediately preceeding this one in the **parent**'s [`children`](Node::children).
     /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *first* child of the **parent**.
     pub fn prev_sibling(&self) -> Option<&Self> {
-        self.find_self(self.parent()?.children.iter().rev())
+        self.find_self_next(self.parent()?.children.iter().rev())
     }
 
     /// Pushes the **child** to `this` [`Node`]'s *children*.
-    /// Does nothing if `self` is **child**.
     pub fn append_child(&mut self, mut child: Tree<T>) {
-        if self.is_same_as(child.root()) {
-            return;
-        }
-
+        // Compiler ensures `self != child.root`.
         child.root_mut().parent = Some(unsafe { std::mem::transmute(self as *const Self) });
-
         self.children.push(child.root)
     }
 
@@ -189,40 +183,9 @@ impl<T> Node<T> {
             tree.root_mut().parent = None;
             Some(tree)
         } else {
-            None
+            panic!("Node is not found in its parent")
         }
     }
-
-    // /// Remove this [`Node`] from its **parent** (if it has one).
-    // ///
-    // /// TODO: how this should be used
-    // ///
-    // /// Ownership of the **child** [`Node`] is ***transferred to the caller***.
-    // pub fn detach_self(self: &mut Rc<Self>) -> Tree<T> {
-    //     if let Some(parent) = &self.parent {
-    //         let parent = unsafe {
-    //             &mut (*(Rc::as_ptr(&parent.upgrade().unwrap()) as *mut Self))
-    //         };
-    //
-    //         // Find the index of the node to be removed in its parent's children list.
-    //         // Will be = parent.children.len() if not found.
-    //         let mut index = 0;
-    //         for child in &parent.children {
-    //             if self.is_same_as(child) {
-    //                 break
-    //             }
-    //             index += 1
-    //         }
-    //
-    //         if index < parent.children.len() {
-    //             unsafe {
-    //                 (*(Rc::as_ptr(self) as *mut Self)).parent = None;
-    //             }
-    //         }
-    //     }
-    //
-    //     Rc::clone(self).into()
-    // }
 
     #[inline]
     /// Whether two [`Node`]s are the same (that is, they reference the same object).
@@ -256,7 +219,7 @@ impl<T: Clone> Node<T> {
 
         tree
     }
-    fn clone_children_deep(&self, parent: ParentRef<T>) -> Vec<ChildNode<T>> {
+    fn clone_children_deep(&self, parent: Parent<Self>) -> Vec<Owned<Self>> {
         self.children
             .iter()
             .map(|node| unsafe { &*node.get() })
@@ -271,11 +234,9 @@ impl<T: Clone> Node<T> {
     }
 }
 
-impl<T: PartialEq /*+ ChildrenEq*/> PartialEq for Node<T> {
+impl<T: PartialEq> PartialEq for Node<T> {
     fn eq(&self, other: &Self) -> bool {
         self.content == other.content
-        // TODO: some node types dont care if they have the same children. Add a trait for this. if does not implement the trait, only compare Node::content
-        && self.children() == other.children()
     }
 }
 impl<T: Eq> Eq for Node<T> {}

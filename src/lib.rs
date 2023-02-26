@@ -3,9 +3,8 @@ mod node;
 pub use node::{Node, NodeBuilder};
 use std::{cell::UnsafeCell, fmt::Debug, pin::Pin};
 
-type RootNode<T> = Pin<Box<UnsafeCell<Node<T>>>>;
-type ChildNode<T> = RootNode<T>;
-type ParentRef<T> = *const UnsafeCell<Node<T>>;
+type Owned<T> = Pin<Box<UnsafeCell<T>>>;
+type Parent<T> = *const UnsafeCell<T>;
 
 /// A Tree of [`Node`]s.
 ///
@@ -15,7 +14,7 @@ type ParentRef<T> = *const UnsafeCell<Node<T>>;
 /// When a [`Node`] method *asks* for this type as argument, it means it is **taking ownership** of the [`Node`]s.
 #[derive(Debug)]
 pub struct Tree<T> {
-    pub(crate) root: RootNode<T>,
+    pub(crate) root: Owned<Node<T>>,
 }
 impl<T> Tree<T> {
     #[inline]
@@ -43,9 +42,9 @@ impl<T> From<NodeBuilder<T>> for Tree<T> {
         builder.build()
     }
 }
-impl<T> From<RootNode<T>> for Tree<T> {
+impl<T> From<Owned<Node<T>>> for Tree<T> {
     /// Get a subtree, and the [`Node`] will have 1 more owner.
-    fn from(root: RootNode<T>) -> Self {
+    fn from(root: Owned<Node<T>>) -> Self {
         Tree { root }
     }
 }

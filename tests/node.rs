@@ -39,7 +39,8 @@ fn siblings() {
 fn clone() {
     let tree = Node::builder("parent")
         .child(Node::builder("child a"))
-        .child(Node::builder("child b").child(Node::builder("child d")))
+        .child(Node::builder("child b")
+            .child(Node::builder("child d")))
         .child(Node::builder("child c"))
         .build();
     let root = tree.root();
@@ -63,12 +64,13 @@ fn clone() {
 
 #[test]
 fn detach() {
-    let tree = Node::builder("parent")
-        .child(Node::builder("child a").child(Node::builder("child d")))
+    let mut tree = Node::builder("parent")
+        .child(Node::builder("child a")
+            .child(Node::builder("child d")))
         .child(Node::builder("child b"))
         .child(Node::builder("child c"))
         .build();
-    let root = tree.root();
+    let root = tree.root_mut();
 
     let target = &*root.children()[2];
     let detached = root.detach_descendant(target).unwrap();
@@ -93,7 +95,8 @@ fn detach() {
 fn append_child() {
     let mut tree = Node::builder("parent")
         .child(Node::builder("child a"))
-        .child(Node::builder("child b").child(Node::builder("child d")))
+        .child(Node::builder("child b")
+            .child(Node::builder("child d")))
         .child(Node::builder("child c"))
         .build();
     let root = tree.root_mut();
@@ -119,12 +122,13 @@ fn append_child() {
     assert_eq!(root.children()[1].children(), Vec::<&Node<_>>::new());
 
     // -- Append a node from another tree.
-    let other_tree = Node::builder("other parent")
+    let mut other_tree = Node::builder("other parent")
         .child(Node::builder("other child a"))
         .build();
+    let other_root = other_tree.root_mut();
 
-    let target = &*other_tree.root().children()[0];
-    root.append_child(other_tree.root().detach_descendant(target).unwrap());
+    let target = &*other_root.children()[0];
+    root.append_child(other_root.detach_descendant(target).unwrap());
     dbg!(target);
     assert!(root.children().last().unwrap().is_same_as(target));
     assert_eq!(other_tree.root().children(), Vec::<&Node<_>>::new());
