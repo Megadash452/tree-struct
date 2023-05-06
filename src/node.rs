@@ -164,30 +164,23 @@ impl<T> Node<T> {
     /// It should be enough to assert that the root node is `mut`, so by extension the descendant is also `mut`.
     /// This is helpful because **descendant** cannot be obtained as `mut` (*for now*).
     pub fn detach_descendant(&mut self, descendant: *const Self) -> Option<Tree<T>> {
-        if self.is_same_as(descendant)
+        if descendant == std::ptr::null()
+        || self.is_same_as(descendant)
         || !self.has_descendant(descendant) {
             return None;
         }
 
         let parent = unsafe { &mut *UnsafeCell::raw_get((&*descendant).parent.unwrap()) };
 
-        // Find the index of the node to be removed in its parent's children list
-        let mut index = 0;
-        for child in &parent.children {
-            if descendant == child.get() {
-                break;
-            }
-            index += 1
-        }
+        // Find the index of **descendant** to remove it from its parent's children list
+        let index = parent.children.iter()
+            .position(|child| descendant == child.get())
+            .expect("Node is not found in its parent");
 
-        if index < parent.children.len() {
-            // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
-            let mut tree = Tree::from(parent.children.remove(index));
-            tree.root_mut().parent = None;
-            Some(tree)
-        } else {
-            panic!("Node is not found in its parent")
-        }
+        // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
+        let mut tree = Tree::from(parent.children.remove(index));
+        tree.root_mut().parent = None;
+        Some(tree)
     }
 
     #[inline]

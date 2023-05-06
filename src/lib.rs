@@ -30,7 +30,7 @@ impl<T> Tree<T> {
     }
 }
 impl<T: Clone> Tree<T> {
-    /// See [`Node::clone_deep()`].
+    /// Calls [`Node::clone_deep()`] on the root of the [`Tree`].
     pub fn clone_deep(&self) -> Tree<T> {
         self.root().clone_deep()
     }
@@ -43,7 +43,6 @@ impl<T> From<NodeBuilder<T>> for Tree<T> {
     }
 }
 impl<T> From<Owned<Node<T>>> for Tree<T> {
-    /// Get a subtree, and the [`Node`] will have 1 more owner.
     fn from(root: Owned<Node<T>>) -> Self {
         Tree { root }
     }
