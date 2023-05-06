@@ -72,12 +72,12 @@ fn detach() {
         .build();
     let root = tree.root_mut();
 
-    let target = &*root.children()[2];
+    let target = root.children()[2].ptr();
     let detached = root.detach_descendant(target).unwrap();
     assert!(detached.root().is_same_as(target));
     assert_eq!(detached, Node::builder("child c").build());
 
-    let target = &*root.children()[0].children()[0];
+    let target = root.children()[0].children()[0].ptr();
     let detached = root.detach_descendant(target).unwrap();
     assert!(detached.root().is_same_as(target));
     assert_eq!(detached, Node::builder("child d").build());
@@ -127,9 +127,8 @@ fn append_child() {
         .build();
     let other_root = other_tree.root_mut();
 
-    let target = &*other_root.children()[0];
+    let target = other_root.children()[0].ptr();
     root.append_child(other_root.detach_descendant(target).unwrap());
-    dbg!(target);
     assert!(root.children().last().unwrap().is_same_as(target));
     assert_eq!(other_tree.root().children(), Vec::<&Node<_>>::new());
 

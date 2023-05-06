@@ -113,8 +113,8 @@ impl<T> Node<T> {
     }
 
     /// Look at every ancestor of **other** until **self** is found. (Not recursive).
-    fn has_descendant(&self, other: &Self) -> bool {
-        let mut ancestor = other.parent();
+    fn has_descendant(&self, other: *const Self) -> bool {
+        let mut ancestor = unsafe { &*other }.parent();
 
         while let Some(node) = ancestor {
             if self.is_same_as(node) {
@@ -127,7 +127,7 @@ impl<T> Node<T> {
     }
     fn find_self_next<'a>(&self, iter: impl Iterator<Item = &'a Owned<Self>>) -> Option<&'a Self> {
         let mut iter = iter.map(|sib| unsafe { &*sib.get() });
-        iter.find(|sib| self.is_same_as(sib));
+        iter.find(|sib| self.is_same_as(*sib));
         iter.next()
     }
 
@@ -150,28 +150,31 @@ impl<T> Node<T> {
     }
 
     /// If **self** [`is_same_as`](Node::is_same_as()) **descendant**,
-    /// or if **descendant** is not a descendant of **self**, will return [`None`].
-    /// See [`Self::detach_self()`].
+    /// or if **descendant** is not an actual descendant of **self**, will return [`None`].
+    /// See `tests/node::detach()`.
     ///
-    /// This function should be called from the root node (*since for now it is the only node that you can get as `mut`*).
+    /// This function should be called from the *root [`Node`]* (*since it is the only node that can be obtained as `mut`*).
     ///
     /// Ownership of the **descendant** [`Node`] is ***transferred to the caller***.
+    /// **descendant** must be a *raw pointer* ([`Self::ptr`]) because, if it was a reference,
+    /// the borrow checker will consider the entire [`Tree`] to be *immutably borrowed* (including *self*).
+    /// The **descendant** pointer passed to this function will remain valid because it is [`Pin`]ned.
     ///
     /// **Descendant** does not have to be `mut`.
     /// It should be enough to assert that the root node is `mut`, so by extension the descendant is also `mut`.
     /// This is helpful because **descendant** cannot be obtained as `mut` (*for now*).
-    pub fn detach_descendant(&self, descendant: &Self) -> Option<Tree<T>> {
+    pub fn detach_descendant(&mut self, descendant: *const Self) -> Option<Tree<T>> {
         if self.is_same_as(descendant)
         || !self.has_descendant(descendant) {
             return None;
         }
 
-        let parent = unsafe { &mut *UnsafeCell::raw_get(descendant.parent.unwrap()) };
+        let parent = unsafe { &mut *UnsafeCell::raw_get((&*descendant).parent.unwrap()) };
 
         // Find the index of the node to be removed in its parent's children list
         let mut index = 0;
         for child in &parent.children {
-            if descendant.is_same_as(unsafe { &*child.get() }) {
+            if descendant == child.get() {
                 break;
             }
             index += 1
@@ -189,8 +192,12 @@ impl<T> Node<T> {
 
     #[inline]
     /// Whether two [`Node`]s are the same (that is, they reference the same object).
-    pub fn is_same_as(&self, other: &Self) -> bool {
+    pub fn is_same_as(&self, other: *const Self) -> bool {
         std::ptr::eq(self, other)
+    }
+    #[inline]
+    pub fn ptr(&self) -> *const Self {
+        self as *const Self
     }
 }
 
