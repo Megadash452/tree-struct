@@ -57,8 +57,7 @@ impl<T> NodeBuilder<T> {
     }
 
     /// Create a new [`Tree`] from nodes with **children** and **content**.
-    /// The children will be made into [`Node`]s with the proper **parent**.
-    /// All of the children will be put into [`Reference Counted Pointer`](Rc)s recursively.
+    /// The children will be made into [`Pin`]ned [`Node`]s with the proper **parent**.
     pub fn build(self) -> Tree<T> {
         let mut tree = Tree::from(Box::pin(UnsafeCell::new(Node {
             content: self.content,
@@ -142,25 +141,31 @@ impl<T> Node<T> {
         self.find_self_next(self.parent()?.children.iter().rev())
     }
 
-    /// Pushes the **child** to `this` [`Node`]'s *children*.
+    /// Pushes the **child** to **self**'s *children*.
     pub fn append_child(&mut self, mut child: Tree<T>) {
         // Compiler ensures `self != child.root`.
         child.root_mut().parent = Some(unsafe { std::mem::transmute(self as *const Self) });
         self.children.push(child.root)
     }
 
-    /// If **self** [`is_same_as`](Node::is_same_as()) **descendant**,
+    /// If **self** [`is_same_as`](Self::is_same_as()) **descendant**,
     /// or if **descendant** is not an actual descendant of **self**, will return [`None`].
-    /// See `tests/node::detach()`.
     ///
     /// This function should be called from the *root [`Node`]* (*since it is the only node that can be obtained as `mut`*).
     ///
     /// Ownership of the **descendant** [`Node`] is ***transferred to the caller***.
-    /// **descendant** must be a *raw pointer* ([`Self::ptr`]) because, if it was a reference,
+    /// **descendant** must be a *raw pointer* ([`Node::ptr`]) because, if it was a reference,
     /// the borrow checker will consider the entire [`Tree`] to be *immutably borrowed* (including *self*).
     /// The **descendant** pointer passed to this function will remain valid because it is [`Pin`]ned.
+    /// 
+    /// # Example
+    /// ```no_run
+    /// let root = tree.root_mut();
+    /// let target = root.children()[2].ptr();
+    /// let detached = root.detach_descendant(target).unwrap();
+    /// ```
     ///
-    /// **Descendant** does not have to be `mut`.
+    /// **descendant** does not have to be `mut`.
     /// It should be enough to assert that the root node is `mut`, so by extension the descendant is also `mut`.
     /// This is helpful because **descendant** cannot be obtained as `mut` (*for now*).
     pub fn detach_descendant(&mut self, descendant: *const Self) -> Option<Tree<T>> {
@@ -189,6 +194,7 @@ impl<T> Node<T> {
         std::ptr::eq(self, other)
     }
     #[inline]
+    /// Get a *raw pointer* for **self**. Useful for [`Self::detach_descendant`].
     pub fn ptr(&self) -> *const Self {
         self as *const Self
     }
