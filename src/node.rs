@@ -1,6 +1,6 @@
-use std::ptr::NonNull;
-use ptrplus::AsPtr;
 use super::*;
+use ptrplus::AsPtr;
+use std::ptr::NonNull;
 
 /// Helper struct to build a [`Tree`] of [`Node`]s.
 ///
@@ -158,7 +158,7 @@ impl<T> Node<T> {
     /// **descendant** must be a *NonNull pointer* (obtained from [`Node::ptr`]) because, if it was a reference,
     /// the borrow checker will consider the entire [`Tree`] to be *immutably borrowed* (including *self*).
     /// The **descendant** pointer passed to this function will remain valid because it is [`Pin`]ned.
-    /// 
+    ///
     /// # Example
     /// ```
     /// # use tree_struct::Node;
@@ -191,8 +191,19 @@ impl<T> Node<T> {
     }
 
     #[inline]
+    /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Breadth-First Search**.
+    pub fn iter_bfs(&self) -> impl Iterator<Item = &Node<T>> {
+        IterBFS::new(self)
+    }
+    #[inline]
+    /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Depth-First Search**.
+    pub fn iter_dfs(&self) -> impl Iterator<Item = &Node<T>> {
+        IterDFS::new(self)
+    }
+
+    #[inline]
     /// Whether two [`Node`]s are the same (that is, they reference the same object).
-    pub fn is_same_as(&self, other: impl AsPtr<Raw=Self>) -> bool {
+    pub fn is_same_as(&self, other: impl AsPtr<Raw = Self>) -> bool {
         std::ptr::eq(self, other.as_ptr())
     }
     #[inline]
@@ -254,7 +265,10 @@ impl<T: Debug> Debug for Node<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.content)
-            .field("parent", &self.parent.map(|p| unsafe { &(*(*p).get()).content }))
+            .field(
+                "parent",
+                &self.parent.map(|p| unsafe { &(*(*p).get()).content }),
+            )
             .field("children", &self.children())
             .finish()
     }
