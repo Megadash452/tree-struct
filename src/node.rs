@@ -102,7 +102,7 @@ impl<T> Node<T> {
     }
 
     /// Holds references to each **child**.
-    pub fn children(&self) -> Vec<&Self> {
+    pub fn children(&self) -> Box<[&Self]> {
         self.children
             .iter()
             .map(|child| unsafe { &*child.get() })
