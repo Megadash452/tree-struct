@@ -1,7 +1,5 @@
 use std::ptr::NonNull;
-
 use ptrplus::AsPtr;
-
 use super::*;
 
 /// Helper struct to build a [`Tree`] of [`Node`]s.
@@ -11,8 +9,7 @@ use super::*;
 /// or something similar, but by assigning the fields.
 ///
 /// ```
-/// use tree_struct::{Node, NodeBuilder};
-///
+/// # use tree_struct::{Node, NodeBuilder};
 /// let tree1 = Node::builder("parent")
 ///     .child(Node::builder("child a"))
 ///     .child(Node::builder("child b")
@@ -163,9 +160,11 @@ impl<T> Node<T> {
     /// The **descendant** pointer passed to this function will remain valid because it is [`Pin`]ned.
     /// 
     /// # Example
-    /// ```ignore
+    /// ```
+    /// # use tree_struct::Node;
+    /// # let mut tree = Node::builder(0).child(Node::builder(1)).child(Node::builder(2)).build();
     /// let root = tree.root_mut();
-    /// let target = root.children()[2].ptr();
+    /// let target = root.children()[1].ptr();
     /// let detached = root.detach_descendant(target).unwrap();
     /// ```
     ///
@@ -255,8 +254,8 @@ impl<T: Debug> Debug for Node<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.content)
-            .field("parent", &self.parent.map(|p| unsafe { &*p }))
-            .field("children", &self.children)
+            .field("parent", &self.parent.map(|p| unsafe { &(*(*p).get()).content }))
+            .field("children", &self.children())
             .finish()
     }
 }
