@@ -1,3 +1,7 @@
+use std::ptr::NonNull;
+
+use ptrplus::AsPtr;
+
 use super::*;
 
 /// Helper struct to build a [`Tree`] of [`Node`]s.
@@ -41,7 +45,7 @@ use super::*;
 #[derive(Default)]
 pub struct NodeBuilder<T> {
     pub content: T,
-    pub children: Vec<NodeBuilder<T>>,
+    pub children: Vec<Self>,
 }
 impl<T> NodeBuilder<T> {
     /// New [`NodeBuilder`] using [Builder Pattern](https://rust-unofficial.github.io/patterns/patterns/creational/builder.html).
@@ -112,8 +116,8 @@ impl<T> Node<T> {
     }
 
     /// Look at every ancestor of **other** until **self** is found. (Not recursive).
-    fn has_descendant(&self, other: *const Self) -> bool {
-        let mut ancestor = unsafe { &*other }.parent();
+    fn has_descendant(&self, other: NonNull<Self>) -> bool {
+        let mut ancestor = unsafe { other.as_ref() }.parent();
 
         while let Some(node) = ancestor {
             if self.is_same_as(node) {
@@ -153,13 +157,13 @@ impl<T> Node<T> {
     ///
     /// This function should be called from the *root [`Node`]* (*since it is the only node that can be obtained as `mut`*).
     ///
-    /// Ownership of the **descendant** [`Node`] is ***transferred to the caller***.
-    /// **descendant** must be a *raw pointer* ([`Node::ptr`]) because, if it was a reference,
+    /// Ownership of the **descendant** [`Node`] is ***transferred to the caller*** (as a [`Tree`]).
+    /// **descendant** must be a *NonNull pointer* (obtained from [`Node::ptr`]) because, if it was a reference,
     /// the borrow checker will consider the entire [`Tree`] to be *immutably borrowed* (including *self*).
     /// The **descendant** pointer passed to this function will remain valid because it is [`Pin`]ned.
     /// 
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// let root = tree.root_mut();
     /// let target = root.children()[2].ptr();
     /// let detached = root.detach_descendant(target).unwrap();
@@ -168,18 +172,17 @@ impl<T> Node<T> {
     /// **descendant** does not have to be `mut`.
     /// It should be enough to assert that the root node is `mut`, so by extension the descendant is also `mut`.
     /// This is helpful because **descendant** cannot be obtained as `mut` (*for now*).
-    pub fn detach_descendant(&mut self, descendant: *const Self) -> Option<Tree<T>> {
-        if descendant == std::ptr::null()
-        || self.is_same_as(descendant)
+    pub fn detach_descendant(&mut self, descendant: NonNull<Self>) -> Option<Tree<T>> {
+        if self.is_same_as(descendant)
         || !self.has_descendant(descendant) {
             return None;
         }
 
-        let parent = unsafe { &mut *UnsafeCell::raw_get((&*descendant).parent.unwrap()) };
+        let parent = unsafe { &mut *UnsafeCell::raw_get(descendant.as_ref().parent.unwrap()) };
 
         // Find the index of **descendant** to remove it from its parent's children list
         let index = parent.children.iter()
-            .position(|child| descendant == child.get())
+            .position(|child| descendant.as_ptr() == child.get())
             .expect("Node is not found in its parent");
 
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
@@ -190,13 +193,15 @@ impl<T> Node<T> {
 
     #[inline]
     /// Whether two [`Node`]s are the same (that is, they reference the same object).
-    pub fn is_same_as(&self, other: *const Self) -> bool {
-        std::ptr::eq(self, other)
+    pub fn is_same_as(&self, other: impl AsPtr<Raw=Self>) -> bool {
+        std::ptr::eq(self, other.as_ptr())
     }
     #[inline]
-    /// Get a *raw pointer* for **self**. Useful for [`Self::detach_descendant`].
-    pub fn ptr(&self) -> *const Self {
-        self as *const Self
+    /// Get a *[`NonNull`] pointer* for **self**, which should only be treated as a `*const Self`.
+    /// Useful for [`Self::detach_descendant`].
+    /// To get a *raw pointer* (*const Self) do `.ptr().as_ptr()`.
+    pub fn ptr(&self) -> NonNull<Self> {
+        NonNull::from(self)
     }
 }
 

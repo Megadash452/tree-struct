@@ -111,7 +111,7 @@ fn append_child() {
 
     // -- Append a node that was already in the tree.
     let detached = root
-        .detach_descendant(&*root.children()[1].children()[0])
+        .detach_descendant(root.children()[1].children()[0].ptr())
         .unwrap();
     root.append_child(detached);
     // assert!(root.children().last().unwrap().is_same_as(target));
