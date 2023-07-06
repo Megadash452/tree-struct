@@ -70,15 +70,14 @@ fn detach() {
         .child(Node::builder("child b"))
         .child(Node::builder("child c"))
         .build();
-    let root = tree.root_mut();
 
-    let target = root.children()[2].ptr();
-    let detached = root.detach_descendant(target).unwrap();
+    let target = tree.root().children()[2].ptr();
+    let detached = tree.detach_descendant(target).unwrap();
     assert!(detached.root().is_same_as(target));
     assert_eq!(detached, Node::builder("child c").build());
 
-    let target = root.children()[0].children()[0].ptr();
-    let detached = root.detach_descendant(target).unwrap();
+    let target = tree.root().children()[0].children()[0].ptr();
+    let detached = tree.detach_descendant(target).unwrap();
     assert!(detached.root().is_same_as(target));
     assert_eq!(detached, Node::builder("child d").build());
 
@@ -99,36 +98,28 @@ fn append_child() {
             .child(Node::builder("child d")))
         .child(Node::builder("child c"))
         .build();
-    let root = tree.root_mut();
 
     // -- Append a new node.
     let new = Node::builder("child e").build();
-    root.append_child(new);
-    assert_eq!(
-        &**root.children().last().unwrap(),
-        Node::builder("child e").build().root()
-    );
+    tree.root_mut().append_child(new);
+    assert_eq!(tree.root().children().last().unwrap().content, "child e");
 
     // -- Append a node that was already in the tree.
-    let detached = root
-        .detach_descendant(root.children()[1].children()[0].ptr())
-        .unwrap();
+    let target = tree.root().children()[1].children()[0].ptr();
+    let detached = tree.detach_descendant(target).unwrap();
+    let root = tree.root_mut();
     root.append_child(detached);
-    // assert!(root.children().last().unwrap().is_same_as(target));
-    assert_eq!(
-        &**root.children().last().unwrap(),
-        Node::builder("child d").build().root()
-    );
+    assert!(root.children().last().unwrap().is_same_as(target));
+    assert_eq!(root.children().last().unwrap().content, "child d");
     assert!(root.children()[1].children().is_empty());
 
     // -- Append a node from another tree.
     let mut other_tree = Node::builder("other parent")
         .child(Node::builder("other child a"))
         .build();
-    let other_root = other_tree.root_mut();
 
-    let target = other_root.children()[0].ptr();
-    root.append_child(other_root.detach_descendant(target).unwrap());
+    let target = other_tree.root().children()[0].ptr();
+    root.append_child(other_tree.detach_descendant(target).unwrap());
     assert!(root.children().last().unwrap().is_same_as(target));
     assert!(other_tree.root().children().is_empty());
 

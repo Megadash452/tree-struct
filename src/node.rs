@@ -39,7 +39,7 @@ use std::ptr::NonNull;
 ///
 /// assert_eq!(tree1, tree2);
 /// ```
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct NodeBuilder<T> {
     pub content: T,
     pub children: Vec<Self>,
@@ -89,7 +89,7 @@ impl<T> NodeBuilder<T> {
     }
 }
 
-#[derive(Default)]
+
 pub struct Node<T> {
     parent: Option<Parent<Self>>,
     children: Vec<Owned<Self>>,
@@ -108,10 +108,18 @@ impl<T> Node<T> {
             .map(|child| unsafe { &*child.get() })
             .collect()
     }
+    /// Holds mutable references to each **child**.
+    pub fn children_mut(&mut self) -> Box<[&mut Self]> {
+        self.children
+            .iter_mut()
+            .map(|child| unsafe { &mut *child.get() })
+            .collect()
+    }
+
     pub fn parent(&self) -> Option<&Self> {
         self.parent.map(|p| unsafe { &*UnsafeCell::raw_get(p) })
     }
-
+    
     /// Look at every ancestor of **other** until **self** is found. (Not recursive).
     fn has_descendant(&self, other: NonNull<Self>) -> bool {
         let mut ancestor = unsafe { other.as_ref() }.parent();
@@ -149,29 +157,11 @@ impl<T> Node<T> {
         self.children.push(child.root)
     }
 
-    /// If **self** [`is_same_as`](Self::is_same_as()) **descendant**,
-    /// or if **descendant** is not an actual descendant of **self**, will return [`None`].
-    ///
-    /// This function should be called from the *root [`Node`]* (*since it is the only node that can be obtained as `mut`*).
-    ///
-    /// Ownership of the **descendant** [`Node`] is ***transferred to the caller*** (as a [`Tree`]).
-    /// **descendant** must be a *NonNull pointer* (obtained from [`Node::ptr`]) because, if it was a reference,
-    /// the borrow checker will consider the entire [`Tree`] to be *immutably borrowed* (including *self*).
-    /// The **descendant** pointer passed to this function will remain valid because it is [`Pin`]ned.
-    ///
-    /// # Example
-    /// ```
-    /// # use tree_struct::Node;
-    /// # let mut tree = Node::builder(0).child(Node::builder(1)).child(Node::builder(2)).build();
-    /// let root = tree.root_mut();
-    /// let target = root.children()[1].ptr();
-    /// let detached = root.detach_descendant(target).unwrap();
-    /// ```
-    ///
+    /// See [`crate::Tree::detach_descendant()`].
+    /// 
     /// **descendant** does not have to be `mut`.
-    /// It should be enough to assert that the root node is `mut`, so by extension the descendant is also `mut`.
-    /// This is helpful because **descendant** cannot be obtained as `mut` (*for now*).
-    pub fn detach_descendant(&mut self, descendant: NonNull<Self>) -> Option<Tree<T>> {
+    /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
+    pub(super) fn detach_descendant(&mut self, descendant: NonNull<Self>) -> Option<Tree<T>> {
         if self.is_same_as(descendant)
         || !self.has_descendant(descendant) {
             return None;
@@ -190,14 +180,27 @@ impl<T> Node<T> {
         Some(tree)
     }
 
+    /// See [`crate::Tree::borrow_descendant()`].
+    /// 
+    /// **descendant** does not have to be `mut`.
+    /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
+    pub(super) fn borrow_descendant(&mut self, descendant: NonNull<Self>) -> Option<&mut Self> {
+        if self.is_same_as(descendant)
+        || !self.has_descendant(descendant) {
+            None
+        } else {
+            Some(unsafe { &mut *descendant.as_ptr() })
+        }
+    }
+
     #[inline]
     /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Breadth-First Search**.
-    pub fn iter_bfs(&self) -> impl Iterator<Item = &Node<T>> {
+    pub fn iter_bfs(&self) -> IterBFS<T> {
         IterBFS::new(self)
     }
     #[inline]
     /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Depth-First Search**.
-    pub fn iter_dfs(&self) -> impl Iterator<Item = &Node<T>> {
+    pub fn iter_dfs(&self) -> IterDFS<T> {
         IterDFS::new(self)
     }
 
@@ -252,6 +255,12 @@ impl<T: Clone> Node<T> {
                 child
             })
             .collect()
+    }
+}
+
+impl<T: Default> Node<T> {
+    pub fn default() -> Tree<T> {
+        NodeBuilder::default().build()
     }
 }
 
