@@ -155,6 +155,12 @@ impl<T> Node<T> {
         child.root_mut().parent = Some(unsafe { std::mem::transmute(self as *const Self) });
         self.children.push(child.root)
     }
+    /// Inserts the **child** to **self**'s *children* at some index.
+    pub fn insert_child(&mut self, mut child: Tree<T>, index: usize) {
+        // Compiler ensures `self != child.root`.
+        child.root_mut().parent = Some(unsafe { std::mem::transmute(self as *const Self) });
+        self.children.insert(index, child.root)
+    }
 
     /// See [`crate::Tree::detach_descendant()`].
     ///
