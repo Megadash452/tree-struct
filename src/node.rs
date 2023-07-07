@@ -89,7 +89,6 @@ impl<T> NodeBuilder<T> {
     }
 }
 
-
 pub struct Node<T> {
     parent: Option<Parent<Self>>,
     children: Vec<Owned<Self>>,
@@ -119,7 +118,7 @@ impl<T> Node<T> {
     pub fn parent(&self) -> Option<&Self> {
         self.parent.map(|p| unsafe { &*UnsafeCell::raw_get(p) })
     }
-    
+
     /// Look at every ancestor of **other** until **self** is found. (Not recursive).
     fn has_descendant(&self, other: NonNull<Self>) -> bool {
         let mut ancestor = unsafe { other.as_ref() }.parent();
@@ -158,7 +157,7 @@ impl<T> Node<T> {
     }
 
     /// See [`crate::Tree::detach_descendant()`].
-    /// 
+    ///
     /// **descendant** does not have to be `mut`.
     /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
     pub(super) fn detach_descendant(&mut self, descendant: NonNull<Self>) -> Option<Tree<T>> {
@@ -181,7 +180,7 @@ impl<T> Node<T> {
     }
 
     /// See [`crate::Tree::borrow_descendant()`].
-    /// 
+    ///
     /// **descendant** does not have to be `mut`.
     /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
     pub(super) fn borrow_descendant(&mut self, descendant: NonNull<Self>) -> Option<&mut Self> {
@@ -211,7 +210,7 @@ impl<T> Node<T> {
     }
     #[inline]
     /// Get a *[`NonNull`] pointer* for **self**, which should only be treated as a `*const Self`.
-    /// Useful for [`Self::detach_descendant`].
+    /// Useful for [`Tree::detach_descendant`] and [`Tree::borrow_descendant`].
     /// To get a *raw pointer* (*const Self) do `.ptr().as_ptr()`.
     pub fn ptr(&self) -> NonNull<Self> {
         NonNull::from(self)
@@ -258,7 +257,9 @@ impl<T: Clone> Node<T> {
     }
 }
 
+/// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned [`UnsafeCell`].
 impl<T: Default> Node<T> {
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Tree<T> {
         NodeBuilder::default().build()
     }
