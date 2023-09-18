@@ -107,9 +107,10 @@ fn append_child() {
     // -- Append a node that was already in the tree.
     let target = tree.root().children()[1].children()[0].ptr();
     let detached = tree.detach_descendant(target).unwrap();
-    let root = tree.root_mut();
-    root.append_child(detached);
-    assert!(root.children().last().unwrap().is_same_as(target));
+    // TODO: find a way to pass Pin<&mut T> to the function without moving it and without calling Pin::as_mut().
+    let mut root = tree.root_mut();
+    root.as_mut().append_child(detached);
+    assert!(root.as_mut().children().last().unwrap().is_same_as(target));
     assert_eq!(root.children().last().unwrap().content, "child d");
     assert!(root.children()[1].children().is_empty());
 
@@ -119,7 +120,7 @@ fn append_child() {
         .build();
 
     let target = other_tree.root().children()[0].ptr();
-    root.append_child(other_tree.detach_descendant(target).unwrap());
+    root.as_mut().append_child(other_tree.detach_descendant(target).unwrap());
     assert!(root.children().last().unwrap().is_same_as(target));
     assert!(other_tree.root().children().is_empty());
 
@@ -135,4 +136,24 @@ fn append_child() {
             .child(Node::builder("other child a"))
             .build()
     );
+}
+
+#[test]
+fn dangling() {
+    let mut tree = Node::builder("parent")
+        .child(Node::builder("child")
+            .child(Node::builder("grandchild")))
+        .build();
+
+    // These will be dangling ptrs
+    let child = tree.root().children()[0].ptr();
+    let grandchild = unsafe { child.as_ref().children()[0].ptr() };
+
+    drop(tree.detach_descendant(child));
+
+    // All methods taking a ptr should return None when the ptr is dangling.
+    assert_eq!(tree.detach_descendant(child), None);
+    assert_eq!(tree.borrow_descendant(child), None);
+    assert_eq!(tree.detach_descendant(grandchild), None);
+    assert_eq!(tree.borrow_descendant(grandchild), None);
 }

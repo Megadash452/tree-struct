@@ -1,6 +1,6 @@
 use super::*;
 use ptrplus::AsPtr;
-use std::ptr::NonNull;
+use std::{ptr::NonNull, marker::PhantomPinned};
 
 /// Helper struct to build a [`Tree`] of [`Node`]s.
 ///
@@ -64,9 +64,13 @@ impl<T> NodeBuilder<T> {
             content: self.content,
             parent: None,
             children: vec![],
+            _pin: PhantomPinned,
         })));
 
-        tree.root_mut().children = Self::build_children(&*tree.root, self.children);
+        unsafe { tree.root_mut().get_unchecked_mut() }.children = Self::build_children(
+            unsafe { NonNull::new_unchecked(tree.root.get()) },
+            self.children
+        );
 
         tree
     }
@@ -78,10 +82,13 @@ impl<T> NodeBuilder<T> {
                     content: builder.content,
                     parent: Some(parent),
                     children: vec![],
+                    _pin: PhantomPinned,
                 }));
 
-                unsafe { &mut *child.get() }.children =
-                    Self::build_children(&*child, builder.children);
+                unsafe { &mut *child.get() }.children = Self::build_children(
+                    unsafe { NonNull::new_unchecked(child.get()) },
+                    builder.children
+                );
 
                 child
             })
@@ -90,9 +97,10 @@ impl<T> NodeBuilder<T> {
 }
 
 pub struct Node<T> {
+    pub content: T,
     parent: Option<Parent<Self>>,
     children: Vec<Owned<Self>>,
-    pub content: T,
+    _pin: PhantomPinned,
 }
 impl<T> Node<T> {
     #[inline]
@@ -108,15 +116,20 @@ impl<T> Node<T> {
             .collect()
     }
     /// Holds mutable references to each **child**.
-    pub fn children_mut(&mut self) -> Box<[&mut Self]> {
+    pub fn children_mut(&mut self) -> Box<[Pin<&mut Self>]> {
         self.children
             .iter_mut()
-            .map(|child| unsafe { &mut *child.get() })
+            .map(|child| unsafe {
+                child.as_mut().map_unchecked_mut(|p| p.get_mut())
+            })
             .collect()
     }
 
+    /// Get an *immutable reference* to the `parent` [`Node`] of `self`.
+    /// To get a *mutable reference*,
+    /// call [`crate::Tree::borrow_descendant()`] from the owner [`Tree`] with `self.parent().ptr()`.
     pub fn parent(&self) -> Option<&Self> {
-        self.parent.map(|p| unsafe { &*UnsafeCell::raw_get(p) })
+        self.parent.map(|p| unsafe { p.as_ref() })
     }
 
     /// Look at every ancestor of **other** until **self** is found. (Not recursive).
@@ -149,30 +162,37 @@ impl<T> Node<T> {
         self.find_self_next(self.parent()?.children.iter().rev())
     }
 
-    /// Pushes the **child** to **self**'s *children*.
-    pub fn append_child(&mut self, mut child: Tree<T>) {
+    /// Pushes the **child** to the end of **self**'s *children*.
+    pub fn append_child(self: Pin<&mut Self>, mut child: Tree<T>) {
         // Compiler ensures `self != child.root`.
-        child.root_mut().parent = Some(unsafe { std::mem::transmute(self as *const Self) });
-        self.children.push(child.root)
+        unsafe {
+            let this = self.get_unchecked_mut();
+            child.root_mut().get_unchecked_mut().parent = Some(NonNull::new_unchecked(this));
+            this.children.push(child.root)
+        }
     }
     /// Inserts the **child** to **self**'s *children* at some index.
-    pub fn insert_child(&mut self, mut child: Tree<T>, index: usize) {
+    pub fn insert_child(self: Pin<&mut Self>, mut child: Tree<T>, index: usize) {
         // Compiler ensures `self != child.root`.
-        child.root_mut().parent = Some(unsafe { std::mem::transmute(self as *const Self) });
-        self.children.insert(index, child.root)
+        unsafe {
+            let this = self.get_unchecked_mut() ;
+            child.root_mut().get_unchecked_mut().parent = Some(NonNull::new_unchecked(this));
+            this.children.insert(index, child.root)
+        }
     }
 
     /// See [`crate::Tree::detach_descendant()`].
+    /// TODO: Don't know if should make it public.
     ///
     /// **descendant** does not have to be `mut`.
     /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
-    pub(super) fn detach_descendant(&mut self, descendant: NonNull<Self>) -> Option<Tree<T>> {
+    pub(super) fn detach_descendant(self: Pin<&mut Self>, descendant: NonNull<Self>) -> Option<Tree<T>> {
         if self.is_same_as(descendant)
         || !self.has_descendant(descendant) {
             return None;
         }
 
-        let parent = unsafe { &mut *UnsafeCell::raw_get(descendant.as_ref().parent.unwrap()) };
+        let parent = unsafe { descendant.as_ref().parent.unwrap().as_mut() };
 
         // Find the index of **descendant** to remove it from its parent's children list
         let index = parent.children.iter()
@@ -181,20 +201,21 @@ impl<T> Node<T> {
 
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
         let mut tree = Tree::from(parent.children.remove(index));
-        tree.root_mut().parent = None;
+        unsafe { tree.root_mut().get_unchecked_mut() }.parent = None;
         Some(tree)
     }
 
     /// See [`crate::Tree::borrow_descendant()`].
+    /// TODO: Don't know if should make it public.
     ///
     /// **descendant** does not have to be `mut`.
     /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
-    pub(super) fn borrow_descendant(&mut self, descendant: NonNull<Self>) -> Option<&mut Self> {
+    pub(super) fn borrow_descendant(self: Pin<&mut Self>, descendant: NonNull<Self>) -> Option<Pin<&mut Self>> {
         if self.is_same_as(descendant)
         || !self.has_descendant(descendant) {
             None
         } else {
-            Some(unsafe { &mut *descendant.as_ptr() })
+            Some(unsafe { Pin::new_unchecked(&mut *descendant.as_ptr()) })
         }
     }
 
@@ -233,6 +254,7 @@ impl<T: Clone> Clone for Node<T> {
             content: self.content.clone(),
             parent: None,
             children: vec![],
+            _pin: PhantomPinned,
         }
     }
 }
@@ -244,7 +266,7 @@ impl<T: Clone> Node<T> {
     pub fn clone_deep(&self) -> Tree<T> {
         let mut tree = Tree::from(Box::pin(UnsafeCell::new(self.clone())));
 
-        tree.root_mut().children = self.clone_children_deep(&*tree.root);
+        unsafe { tree.root_mut().get_unchecked_mut() }.children = self.clone_children_deep(unsafe { NonNull::new_unchecked(tree.root.get()) });
 
         tree
     }
@@ -256,7 +278,7 @@ impl<T: Clone> Node<T> {
                 let child = Box::pin(UnsafeCell::new(node.clone()));
                 let mut_child = unsafe { &mut *child.get() };
                 mut_child.parent = Some(parent);
-                mut_child.children = node.clone_children_deep(&*child);
+                mut_child.children = node.clone_children_deep(unsafe { NonNull::new_unchecked(child.get()) });
                 child
             })
             .collect()
@@ -283,7 +305,7 @@ impl<T: Debug> Debug for Node<T> {
             .field("content", &self.content)
             .field(
                 "parent",
-                &self.parent.map(|p| unsafe { &(*(*p).get()).content }),
+                &self.parent.map(|p| unsafe { &p.as_ref().content }),
             )
             .field("children", &self.children())
             .finish()

@@ -30,7 +30,8 @@ pub use node::{Node, NodeBuilder};
 use std::{cell::UnsafeCell, fmt::Debug, pin::Pin, ptr::NonNull};
 
 type Owned<T> = Pin<Box<UnsafeCell<T>>>;
-type Parent<T> = *const UnsafeCell<T>;
+// TODO: Use Pin
+type Parent<T> = NonNull<T>;
 
 /// A Tree of [`Node`]s.
 ///
@@ -50,8 +51,8 @@ impl<T> Tree<T> {
     pub fn root(&self) -> &Node<T> {
         unsafe { &*self.root.get() }
     }
-    pub fn root_mut(&mut self) -> &mut Node<T> {
-        unsafe { &mut *self.root.get() }
+    pub fn root_mut(&mut self) -> Pin<&mut Node<T>> {
+        unsafe { Pin::new_unchecked(&mut *self.root.get()) }
     }
 
     /// Removes the **descendant** of the **root [`Node`]** from the [`Tree`], and returns the *detached [`Node`]* with ownership (aka a [`Tree`]).
@@ -78,7 +79,7 @@ impl<T> Tree<T> {
     }
 
     /// Mutably borrows a **descendant** of the [`Tree`]'s **root [`Node`]** as `mutable`.
-    /// See [Mutable Iterators section](self#iterators-for-mutable-nodes) for why obtaining a `&mut Node` was implemeted this way.
+    /// See [Mutable Iterators section](self#iterators-for-mutable-nodes) for why obtaining a `&mut Node` was implemented this way.
     ///
     /// Returns [`None`] if it is not a **descendant** of the **root**, or **root** [`is_same_as`](Node::is_same_as()) **descendant**.
     ///
@@ -99,7 +100,7 @@ impl<T> Tree<T> {
     ///
     /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
     #[inline]
-    pub fn borrow_descendant(&mut self, descendant: NonNull<Node<T>>) -> Option<&mut Node<T>> {
+    pub fn borrow_descendant(&mut self, descendant: NonNull<Node<T>>) -> Option<Pin<&mut Node<T>>> {
         self.root_mut().borrow_descendant(descendant)
     }
 
