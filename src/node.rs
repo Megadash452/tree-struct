@@ -60,15 +60,15 @@ impl<T> NodeBuilder<T> {
     /// Create a new [`Tree`] from nodes with **children** and **content**.
     /// The children will be made into [`Pin`]ned [`Node`]s with the proper **parent**.
     pub fn build(self) -> Tree<T> {
-        let mut tree = Tree::from(Box::pin(UnsafeCell::new(Node {
+        let mut tree = Tree::from(Box::pin(Node {
             content: self.content,
             parent: None,
             children: vec![],
             _pin: PhantomPinned,
-        })));
+        }));
 
         unsafe { tree.root_mut().get_unchecked_mut() }.children = Self::build_children(
-            unsafe { NonNull::new_unchecked(tree.root.get()) },
+            tree.root.ptr(),
             self.children
         );
 
@@ -78,15 +78,15 @@ impl<T> NodeBuilder<T> {
         children
             .into_iter()
             .map(|builder| {
-                let child = Box::pin(UnsafeCell::new(Node {
+                let mut child = Box::pin(Node {
                     content: builder.content,
                     parent: Some(parent),
                     children: vec![],
                     _pin: PhantomPinned,
-                }));
+                });
 
-                unsafe { &mut *child.get() }.children = Self::build_children(
-                    unsafe { NonNull::new_unchecked(child.get()) },
+                unsafe { child.as_mut().get_unchecked_mut() }.children = Self::build_children(
+                    child.ptr(),
                     builder.children
                 );
 
@@ -112,16 +112,14 @@ impl<T> Node<T> {
     pub fn children(&self) -> Box<[&Self]> {
         self.children
             .iter()
-            .map(|child| unsafe { &*child.get() })
+            .map(|child| child.as_ref().get_ref())
             .collect()
     }
     /// Holds mutable references to each **child**.
     pub fn children_mut(&mut self) -> Box<[Pin<&mut Self>]> {
         self.children
             .iter_mut()
-            .map(|child| unsafe {
-                child.as_mut().map_unchecked_mut(|p| p.get_mut())
-            })
+            .map(|child| child.as_mut())
             .collect()
     }
 
@@ -146,7 +144,7 @@ impl<T> Node<T> {
         false
     }
     fn find_self_next<'a>(&self, iter: impl Iterator<Item = &'a Owned<Self>>) -> Option<&'a Self> {
-        let mut iter = iter.map(|sib| unsafe { &*sib.get() });
+        let mut iter = iter.map(|sib| sib.as_ref().get_ref());
         iter.find(|sib| self.is_same_as(*sib));
         iter.next()
     }
@@ -196,7 +194,7 @@ impl<T> Node<T> {
 
         // Find the index of **descendant** to remove it from its parent's children list
         let index = parent.children.iter()
-            .position(|child| descendant.as_ptr() == child.get())
+            .position(|child| descendant.as_ptr() == child.ptr().as_ptr())
             .expect("Node is not found in its parent");
 
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
@@ -264,21 +262,20 @@ impl<T: Clone> Node<T> {
     ///
     /// For a method that clones the [`Node`] but *not* its subtree, see [`Node::clone`].
     pub fn clone_deep(&self) -> Tree<T> {
-        let mut tree = Tree::from(Box::pin(UnsafeCell::new(self.clone())));
+        let mut tree = Tree::from(Box::pin(self.clone()));
 
-        unsafe { tree.root_mut().get_unchecked_mut() }.children = self.clone_children_deep(unsafe { NonNull::new_unchecked(tree.root.get()) });
+        unsafe { tree.root_mut().get_unchecked_mut() }.children = self.clone_children_deep(tree.root.ptr());
 
         tree
     }
     fn clone_children_deep(&self, parent: Parent<Self>) -> Vec<Owned<Self>> {
         self.children
             .iter()
-            .map(|node| unsafe { &*node.get() })
             .map(|node| {
-                let child = Box::pin(UnsafeCell::new(node.clone()));
-                let mut_child = unsafe { &mut *child.get() };
+                let mut child = Box::pin(node.as_ref().get_ref().clone());
+                let mut_child = unsafe { child.as_mut().get_unchecked_mut() };
                 mut_child.parent = Some(parent);
-                mut_child.children = node.clone_children_deep(unsafe { NonNull::new_unchecked(child.get()) });
+                mut_child.children = node.clone_children_deep(mut_child.ptr());
                 child
             })
             .collect()

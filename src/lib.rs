@@ -27,9 +27,9 @@ mod node;
 
 pub use iter::{IterBFS, IterDFS};
 pub use node::{Node, NodeBuilder};
-use std::{cell::UnsafeCell, fmt::Debug, pin::Pin, ptr::NonNull};
+use std::{fmt::Debug, pin::Pin, ptr::NonNull};
 
-type Owned<T> = Pin<Box<UnsafeCell<T>>>;
+type Owned<T> = Pin<Box<T>>;
 // TODO: Use Pin
 type Parent<T> = NonNull<T>;
 
@@ -49,10 +49,10 @@ impl<T> Tree<T> {
     }
 
     pub fn root(&self) -> &Node<T> {
-        unsafe { &*self.root.get() }
+        self.root.as_ref().get_ref()
     }
     pub fn root_mut(&mut self) -> Pin<&mut Node<T>> {
-        unsafe { Pin::new_unchecked(&mut *self.root.get()) }
+        self.root.as_mut()
     }
 
     /// Removes the **descendant** of the **root [`Node`]** from the [`Tree`], and returns the *detached [`Node`]* with ownership (aka a [`Tree`]).
