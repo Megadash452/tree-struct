@@ -96,13 +96,136 @@ impl<T> NodeBuilder<T> {
     }
 }
 
-pub struct Node<T> {
+pub trait Node: Sized + Debug {
+    // Can't have a `Node::content()` because the content would be the struct itself.
+
+    /// Get an *immutable reference* to the `parent` [`Node`] of `self`.
+    /// To get a *mutable reference*,
+    /// call [`crate::Tree::borrow_descendant()`] from the owner [`Tree`] with `self.parent().ptr()`.
+    fn parent<'a>(self: &'a dyn Node) -> Option<&'a dyn Node>;
+    /// Holds references to each **child**.
+    fn children<'a>(self: &'a dyn Node) -> Box<[&'a dyn Node]>;
+    /// Holds mutable references to each **child**.
+    fn children_mut<'a>(self: Pin<&'a mut dyn Node>) -> Box<[&'a mut dyn Node]>;
+
+    /// Returns the [`Node`] immediately following this one in the **parent**'s [`children`](Node::children()).
+    /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *last* child of the **parent**.
+    fn next_sibling<'a>(self: &'a dyn Node) -> Option<&'a dyn Node> {
+        find_self_next(self, self.parent()?.children().iter())
+    }
+    /// Returns the [`Node`] immediately preceeding this one in the **parent**'s [`children`](Node::children()).
+    /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *first* child of the **parent**.
+    fn prev_sibling<'a>(self: &'a dyn Node) -> Option<&'a dyn Node> {
+        find_self_next(self, self.parent()?.children().iter().rev())
+    }
+
+    /// Pushes the **child** to the end of **self**'s *children*.
+    fn append_child(self: Pin<&mut dyn Node>, child: /*Tree*/String);
+    // {
+    //     // Compiler ensures `self != child.root`.
+    //     unsafe {
+    //         let this = self.get_unchecked_mut();
+    //         child.root_mut().get_unchecked_mut().parent = Some(NonNull::new_unchecked(this));
+    //         this.children.push(child.root)
+    //     }
+    // }
+    /// Inserts the **child** to **self**'s *children* at some index.
+    fn insert_child(self: Pin<&mut dyn Node>, child: /*Tree*/String, index: usize);
+    // {
+    //    // Compiler ensures `self != child.root`.
+    //     unsafe {
+    //         let this = self.get_unchecked_mut() ;
+    //         child.root_mut().get_unchecked_mut().parent = Some(NonNull::new_unchecked(this));
+    //         this.children.insert(index, child.root)
+    //     }
+    // }
+
+    /// See [`crate::Tree::detach_descendant()`].
+    ///
+    /// **descendant** does not have to be `mut`.
+    /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
+    fn detach_descendant(self: Pin<&mut dyn Node>, descendant: NonNull<dyn Node>) -> Option</*Tree*/String> {
+        if self.is_same_as(descendant)
+        || !has_descendant(self.as_ref().get_ref(), descendant) {
+            return None;
+        }
+
+        let parent = unsafe { descendant.as_ref().parent.unwrap().as_mut() };
+
+        // Find the index of **descendant** to remove it from its parent's children list
+        let index = parent.children.iter()
+            .position(|child| descendant.as_ptr() == child.ptr().as_ptr())
+            .expect("Node is not found in its parent");
+
+        // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
+        let mut tree = Tree::from(parent.children.remove(index));
+        unsafe { tree.root_mut().get_unchecked_mut() }.parent = None;
+        Some(tree)
+    }
+    /// See [`crate::Tree::borrow_descendant()`].
+    ///
+    /// **descendant** does not have to be `mut`.
+    /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
+    fn borrow_descendant<'a>(self: Pin<&'a mut dyn Node>, descendant: NonNull<dyn Node>) -> Option<Pin<&'a mut dyn Node>> {
+        if self.is_same_as(descendant)
+        || !has_descendant(self.as_ref().get_ref(), descendant) {
+            None
+        } else {
+            Some(unsafe { Pin::new_unchecked(&mut *descendant.as_ptr()) })
+        }
+    }
+
+    #[inline]
+    /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Breadth-First Search**.
+    fn iter_bfs<'a>(self: &dyn Node) -> IterBFS<'a, T> {
+        IterBFS::new(self)
+    }
+    #[inline]
+    /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Depth-First Search**.
+    fn iter_dfs<'a>(self: &dyn Node) -> IterDFS<'a, T> {
+        IterDFS::new(self)
+    }
+
+    #[inline]
+    /// Whether two [`Node`]s are the same (that is, they reference the same object).
+    fn is_same_as(self: &dyn Node, other: impl AsPtr<Raw = dyn Node>) -> bool {
+        std::ptr::eq(self, other.as_ptr())
+    }
+    #[inline]
+    /// Get a *[`NonNull`] pointer* for **self**, which should only be treated as a `*const Self`.
+    /// Useful for [`Tree::detach_descendant`] and [`Tree::borrow_descendant`].
+    /// To get a *raw pointer* (*const Self) do `.ptr().as_ptr()`.
+    fn ptr(self: &dyn Node) -> NonNull<dyn Node> {
+        NonNull::from(self)
+    }
+}
+
+/// Look at every ancestor of **other** until **self** is found. (Not recursive).
+fn has_descendant(this: &dyn Node, other: NonNull<dyn Node>) -> bool {
+    let mut ancestor = unsafe { other.as_ref() }.parent();
+
+    while let Some(node) = ancestor {
+        if this.is_same_as(node) {
+            return true;
+        }
+        ancestor = node.parent();
+    }
+
+    false
+}
+fn find_self_next<'a>(this: &dyn Node, mut iter: impl Iterator<Item = &'a dyn Node>) -> Option<&'a dyn Node> {
+    iter.find(|sib| this.is_same_as(*sib));
+    iter.next()
+}
+
+
+pub struct BaseNode<T> {
     pub content: T,
     parent: Option<Parent<Self>>,
     children: Vec<Owned<Self>>,
     _pin: PhantomPinned,
 }
-impl<T> Node<T> {
+impl<T> BaseNode<T> {
     #[inline]
     pub fn builder(content: T) -> NodeBuilder<T> {
         NodeBuilder::new(content)
@@ -242,7 +365,7 @@ impl<T> Node<T> {
     }
 }
 
-impl<T: Clone> Clone for Node<T> {
+impl<T: Clone> Clone for BaseNode<T> {
     /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
     /// The resulting cloned [`Node`] will have no **parent** or **children**.
     ///
@@ -256,7 +379,7 @@ impl<T: Clone> Clone for Node<T> {
         }
     }
 }
-impl<T: Clone> Node<T> {
+impl<T: Clone> BaseNode<T> {
     /// Copies the [`Node`]'s [`content`](Node::content) and its [`children`](Node::children) recursively.
     /// The resulting cloned [`Node`] will have no **parent**.
     ///
@@ -283,20 +406,20 @@ impl<T: Clone> Node<T> {
 }
 
 /// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned [`UnsafeCell`].
-impl<T: Default> Node<T> {
+impl<T: Default> BaseNode<T> {
     #[allow(clippy::should_implement_trait)]
     pub fn default() -> Tree<T> {
         NodeBuilder::default().build()
     }
 }
 
-impl<T: PartialEq> PartialEq for Node<T> {
+impl<T: PartialEq> PartialEq for BaseNode<T> {
     fn eq(&self, other: &Self) -> bool {
         self.content == other.content
     }
 }
-impl<T: Eq> Eq for Node<T> {}
-impl<T: Debug> Debug for Node<T> {
+impl<T: Eq> Eq for BaseNode<T> {}
+impl<T: Debug> Debug for BaseNode<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.content)
