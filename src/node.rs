@@ -108,26 +108,20 @@ impl<T> Node<T> {
         NodeBuilder::new(content)
     }
 
-    /// Holds references to each **child**.
-    pub fn children(&self) -> Box<[&Self]> {
-        self.children
-            .iter()
-            .map(|child| child.as_ref().get_ref())
-            .collect()
-    }
-    /// Holds mutable references to each **child**.
-    pub fn children_mut(&mut self) -> Box<[Pin<&mut Self>]> {
-        self.children
-            .iter_mut()
-            .map(|child| child.as_mut())
-            .collect()
-    }
-
     /// Get an *immutable reference* to the `parent` [`Node`] of `self`.
     /// To get a *mutable reference*,
     /// call [`crate::Tree::borrow_descendant()`] from the owner [`Tree`] with `self.parent().ptr()`.
     pub fn parent(&self) -> Option<&Self> {
         self.parent.map(|p| unsafe { p.as_ref() })
+    }
+    /// Holds references to each **child**.
+    /// /// To get a *mutable reference* to one of the **children**,
+    /// call [`crate::Tree::borrow_descendant()`] from the owner [`Tree`] with `self.parent().ptr()`.
+    pub fn children(&self) -> Box<[&Self]> {
+        self.children
+            .iter()
+            .map(|child| child.as_ref().get_ref())
+            .collect()
     }
 
     /// Look at every ancestor of **other** until **self** is found. (Not recursive).
