@@ -112,12 +112,6 @@ impl Tree {
         IterDFS::new(self.root())
     }
 }
-impl Tree {
-    /// Calls [`Node::clone_deep()`] on the root of the [`Tree`].
-    pub fn clone_deep(&self) -> Tree {
-        self.root().clone_deep()
-    }
-}
 
 /* Only Tree should implement IntoIter because , semantically, it makes sense to iterate through a Tree, but doesn't make sense to iterate through a Node.
 Node still has iter_bfs() and iter_dfs() in case the user wants to use it that way. */
@@ -143,6 +137,12 @@ impl From<Owned<dyn Node>> for Tree {
         Tree { root }
     }
 }
+impl Clone for Tree {
+    /// Clones the entire [`Tree`] by calling [`Node::clone_deep()`] on the **root**.
+    fn clone(&self) -> Self {
+        self.root().clone_deep()
+    }
+}
 // impl PartialEq for Tree {
 //     fn eq(&self, other: &Self) -> bool {
 //         self.root().eq(other.root())
@@ -156,7 +156,6 @@ impl From<Owned<dyn Node>> for Tree {
 // }
 // impl Debug for Tree {
 //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         // f.debug_struct("Tree").field("root", self.root()).finish()
-//         todo!()
+//         f.debug_struct("Tree").field("root", self.root()).finish()
 //     }
 // }
