@@ -6,21 +6,21 @@ use std::collections::VecDeque;
 /// Obtained by calling [`Tree::iter_bfs()`] or [`Node::iter_bfs()`].
 ///
 /// There is also [`IterDFS`], which uses *Depth-First search*, but **BFS** is usually *faster* in most scenarios.
-pub struct IterBFS<'a, T> {
+pub struct IterBFS<'a> {
     /* Apparently a Vec would perform better than a LinkedList in this case.
     https://stackoverflow.com/questions/40848918/are-there-queue-and-stack-collections-in-rust */
-    queue: VecDeque<&'a Node<T>>
+    queue: VecDeque<&'a dyn Node>
 }
-impl<'a, T> IterBFS<'a, T> {
-    pub(crate) fn new(node: &'a Node<T>) -> Self {
+impl<'a> IterBFS<'a> {
+    pub(crate) fn new(node: &'a dyn Node) -> Self {
         let mut queue = VecDeque::new();
         // Step 1: Enqueue the root.
         queue.push_back(node);
         Self { queue }
     }
 }
-impl<'a, T> Iterator for IterBFS<'a, T> {
-    type Item = &'a Node<T>;
+impl<'a> Iterator for IterBFS<'a> {
+    type Item = &'a dyn Node;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Step 2: Get next from queue.
@@ -38,19 +38,19 @@ impl<'a, T> Iterator for IterBFS<'a, T> {
 /// Obtained by calling [`Tree::iter_dfs()`] or [`Node::iter_dfs()`].
 ///
 /// You should most likely use [`IterBFS`], which uses *Breadth-First search*, becase it is usually *faster* in most scenarios.
-pub struct IterDFS<'a, T> {
+pub struct IterDFS<'a> {
     /* Apparently a Vec would perform better than a LinkedList in this case.
     https://stackoverflow.com/questions/40848918/are-there-queue-and-stack-collections-in-rust */
-    stack: Vec<&'a Node<T>>
+    stack: Vec<&'a dyn Node>
 }
-impl<'a, T> IterDFS<'a, T> {
-    pub(crate) fn new(node: &'a Node<T>) -> Self {
+impl<'a> IterDFS<'a> {
+    pub(crate) fn new(node: &'a dyn Node) -> Self {
         // Step 1: Push the root.
         Self { stack: vec![node] }
     }
 }
-impl<'a, T> Iterator for IterDFS<'a, T> {
-    type Item = &'a Node<T>;
+impl<'a> Iterator for IterDFS<'a> {
+    type Item = &'a dyn Node;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Step 2: Get next from stack.

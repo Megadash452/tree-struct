@@ -2,6 +2,9 @@
 
 A general-purpose Tree implementation in Rust.
 
+## Dynamic Dispatch
+TODO: Explain when to use static dispatch Node (main branch) and when to use dynamic dispatch (this branch).
+
 ## Trees and Nodes
 
 A Tree is essentially an `owned` Node with **content**, **children**, and no **parent**.

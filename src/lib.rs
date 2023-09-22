@@ -3,6 +3,9 @@
 
 A general-purpose Tree implementation in Rust.
 
+## Dynamic Dispatch
+TODO: Explain when to use static dispatch Node (main branch) and when to use dynamic dispatch (this branch).
+
 ## Trees and Nodes
 
 A Tree is essentially an `owned` Node with **content**, **children**, and no **parent**.
@@ -26,11 +29,10 @@ mod iter;
 mod node;
 
 pub use iter::{IterBFS, IterDFS};
-pub use node::{Node, NodeBuilder};
+pub use node::{Node, BaseNode, NodeBuilder};
 use std::{fmt::Debug, pin::Pin, ptr::NonNull};
 
 type Owned<T> = Pin<Box<T>>;
-// TODO: Use Pin
 type Parent<T> = NonNull<T>;
 
 /// A Tree of [`Node`]s.
@@ -39,19 +41,14 @@ type Parent<T> = NonNull<T>;
 /// When a [`Node`] method *returns* this type, it means it is **passing ownership** of the [`Node`]s.
 ///
 /// When a [`Node`] method *asks* for this type as argument, it means it is **taking ownership** of the [`Node`]s.
-pub struct Tree<T> {
-    root: Owned<Node<T>>,
+pub struct Tree {
+    root: Owned<dyn Node>,
 }
-impl<T> Tree<T> {
-    #[inline]
-    pub fn builder(content: T) -> NodeBuilder<T> {
-        NodeBuilder::new(content)
-    }
-
-    pub fn root(&self) -> &Node<T> {
+impl Tree {
+    pub fn root(&self) -> &dyn Node {
         self.root.as_ref().get_ref()
     }
-    pub fn root_mut(&mut self) -> Pin<&mut Node<T>> {
+    pub fn root_mut(&mut self) -> Pin<&mut dyn Node> {
         self.root.as_mut()
     }
 
@@ -74,7 +71,7 @@ impl<T> Tree<T> {
     /// assert!(detached.root().is_same_as(target));
     /// ```
     #[inline]
-    pub fn detach_descendant(&mut self, descendant: NonNull<Node<T>>) -> Option<Tree<T>> {
+    pub fn detach_descendant(&mut self, descendant: NonNull<dyn Node>) -> Option<Self> {
         self.root_mut().detach_descendant(descendant)
     }
 
@@ -100,33 +97,33 @@ impl<T> Tree<T> {
     ///
     /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
     #[inline]
-    pub fn borrow_descendant(&mut self, descendant: NonNull<Node<T>>) -> Option<Pin<&mut Node<T>>> {
+    pub fn borrow_descendant(&mut self, descendant: NonNull<dyn Node>) -> Option<Pin<&mut dyn Node>> {
         self.root_mut().borrow_descendant(descendant)
     }
 
     #[inline]
     /// Iterate over all the [`Node`]s of the [`Tree`] using **Breadth-First Search**.
-    pub fn iter_bfs(&self) -> IterBFS<T> {
+    pub fn iter_bfs(&self) -> IterBFS {
         IterBFS::new(self.root())
     }
     #[inline]
     /// Iterate over all the [`Node`]s of the [`Tree`] using **Depth-First Search**.
-    pub fn iter_dfs(&self) -> IterDFS<T> {
+    pub fn iter_dfs(&self) -> IterDFS {
         IterDFS::new(self.root())
     }
 }
-impl<T: Clone> Tree<T> {
+impl Tree {
     /// Calls [`Node::clone_deep()`] on the root of the [`Tree`].
-    pub fn clone_deep(&self) -> Tree<T> {
+    pub fn clone_deep(&self) -> Tree {
         self.root().clone_deep()
     }
 }
 
 /* Only Tree should implement IntoIter because , semantically, it makes sense to iterate through a Tree, but doesn't make sense to iterate through a Node.
 Node still has iter_bfs() and iter_dfs() in case the user wants to use it that way. */
-impl<'a, T> IntoIterator for &'a Tree<T> {
-    type Item = &'a Node<T>;
-    type IntoIter = IterBFS<'a, T>;
+impl<'a> IntoIterator for &'a Tree {
+    type Item = &'a dyn Node;
+    type IntoIter = IterBFS<'a>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -134,31 +131,32 @@ impl<'a, T> IntoIterator for &'a Tree<T> {
     }
 }
 
-impl<T> From<NodeBuilder<T>> for Tree<T> {
+impl From<NodeBuilder> for Tree {
     #[inline]
-    fn from(builder: NodeBuilder<T>) -> Self {
+    fn from(builder: NodeBuilder) -> Self {
         builder.build()
     }
 }
-impl<T> From<Owned<Node<T>>> for Tree<T> {
+impl From<Owned<dyn Node>> for Tree {
     #[inline]
-    fn from(root: Owned<Node<T>>) -> Self {
+    fn from(root: Owned<dyn Node>) -> Self {
         Tree { root }
     }
 }
-impl<T: PartialEq> PartialEq for Tree<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.root().eq(other.root())
-    }
-}
-impl<T: Eq> Eq for Tree<T> {}
-impl<T: Default> Default for Tree<T> {
-    fn default() -> Self {
-        NodeBuilder::default().build()
-    }
-}
-impl<T: Debug> Debug for Tree<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tree").field("root", self.root()).finish()
-    }
-}
+// impl PartialEq for Tree {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.root().eq(other.root())
+//     }
+// }
+// impl Eq for Tree {}
+// impl Default for Tree {
+//     fn default() -> Self {
+//         NodeBuilder::default().build()
+//     }
+// }
+// impl Debug for Tree {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         // f.debug_struct("Tree").field("root", self.root()).finish()
+//         todo!()
+//     }
+// }
