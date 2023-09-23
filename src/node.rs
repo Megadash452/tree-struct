@@ -64,19 +64,19 @@ impl NodeBuilder {
     /// Create a new [`Tree`] from nodes with **children** and **content**.
     /// The children will be made into [`Pin`]ned [`Node`]s with the proper **parent**.
     pub fn build(self) -> Tree {
-        let mut node = Box::pin(BaseNode {
+        let mut root = Box::pin(Node {
             content: self.content,
             parent: None,
             children: vec![],
             _pin: PhantomPinned,
         });
 
-        unsafe { node.as_mut().get_unchecked_mut() }.children = Self::build_children(
+        unsafe { root.as_mut().get_unchecked_mut() }.children = Self::build_children(
             NonNull::from(node.as_ref().get_ref()),
             self.children
         );
 
-        Tree::from(node as Pin<Box<dyn Node>>)
+        Tree::from(root)
     }
     fn build_children(parent: Parent<dyn Node>, children: Vec<Self>) -> Vec<Owned<dyn Node>> {
         children
@@ -263,9 +263,9 @@ impl Node for BaseNode {
             .expect("Node is not found in its parent");
 
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
-        let mut tree = Tree::from(parent.children.remove(index));
-        unsafe { tree.root_mut().get_unchecked_mut() }.parent = None;
-        Some(tree)
+        let mut root = parent.children.remove(index);
+        unsafe { root.as_mut().get_unchecked_mut() }.parent = None;
+        Some(Tree::from(root))
     }
 
     /// Copies the [`Node`]'s [`content`](Node::content) and its [`children`](Node::children) recursively.
