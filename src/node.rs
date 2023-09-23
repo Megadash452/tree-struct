@@ -60,19 +60,19 @@ impl<T> NodeBuilder<T> {
     /// Create a new [`Tree`] from nodes with **children** and **content**.
     /// The children will be made into [`Pin`]ned [`Node`]s with the proper **parent**.
     pub fn build(self) -> Tree<T> {
-        let mut tree = Tree::from(Box::pin(Node {
+        let mut root = Box::pin(Node {
             content: self.content,
             parent: None,
             children: vec![],
             _pin: PhantomPinned,
-        }));
+        });
 
-        unsafe { tree.root_mut().get_unchecked_mut() }.children = Self::build_children(
-            tree.root.ptr(),
+        unsafe { root.as_mut().get_unchecked_mut() }.children = Self::build_children(
+            root.ptr(),
             self.children
         );
 
-        tree
+        Tree::from(root)
     }
     fn build_children(parent: Parent<Node<T>>, children: Vec<Self>) -> Vec<Owned<Node<T>>> {
         children
@@ -124,8 +124,14 @@ impl<T> Node<T> {
             .collect()
     }
 
-    /// Look at every ancestor of **other** until **self** is found. (Not recursive).
-    fn has_descendant(&self, other: NonNull<Self>) -> bool {
+    /// A [`Node`] is a **descendant** of another [`Node`] if:
+    /// 1. The two [`Node`]s are not the same ([`std::ptr::eq()`]).
+    /// 2. Looking up the [`Tree`] from `other`, `self` is found to be one of `other`'s ancestors. (Not recursive).
+    fn is_descendant(&self, other: NonNull<Self>) -> bool {
+        if self.is_same_as(other) {
+            return false;
+        }
+
         let mut ancestor = unsafe { other.as_ref() }.parent();
 
         while let Some(node) = ancestor {
@@ -179,8 +185,7 @@ impl<T> Node<T> {
     /// **descendant** does not have to be `mut`.
     /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
     pub(super) fn detach_descendant(self: Pin<&mut Self>, descendant: NonNull<Self>) -> Option<Tree<T>> {
-        if self.is_same_as(descendant)
-        || !self.has_descendant(descendant) {
+        if !self.is_descendant(descendant) {
             return None;
         }
 
@@ -192,9 +197,9 @@ impl<T> Node<T> {
             .expect("Node is not found in its parent");
 
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
-        let mut tree = Tree::from(parent.children.remove(index));
-        unsafe { tree.root_mut().get_unchecked_mut() }.parent = None;
-        Some(tree)
+        let mut root = parent.children.remove(index);
+        unsafe { root.as_mut().get_unchecked_mut() }.parent = None;
+        Some(Tree::from(root))
     }
 
     /// See [`crate::Tree::borrow_descendant()`].
@@ -203,11 +208,10 @@ impl<T> Node<T> {
     /// **descendant** does not have to be `mut`.
     /// It should be enough to assert that the whole [`Tree`] is `mut`, so by extension the **descendant** is also `mut`.
     pub(super) fn borrow_descendant(self: Pin<&mut Self>, descendant: NonNull<Self>) -> Option<Pin<&mut Self>> {
-        if self.is_same_as(descendant)
-        || !self.has_descendant(descendant) {
-            None
-        } else {
+        if self.is_descendant(descendant) {
             Some(unsafe { Pin::new_unchecked(&mut *descendant.as_ptr()) })
+        } else {
+            None
         }
     }
 
@@ -256,11 +260,11 @@ impl<T: Clone> Node<T> {
     ///
     /// For a method that clones the [`Node`] but *not* its subtree, see [`Node::clone`].
     pub fn clone_deep(&self) -> Tree<T> {
-        let mut tree = Tree::from(Box::pin(self.clone()));
+        let mut root = Box::pin(self.clone());
 
-        unsafe { tree.root_mut().get_unchecked_mut() }.children = self.clone_children_deep(tree.root.ptr());
+        unsafe { root.as_mut().get_unchecked_mut() }.children = self.clone_children_deep(root.ptr());
 
-        tree
+        Tree::from(root)
     }
     fn clone_children_deep(&self, parent: Parent<Self>) -> Vec<Owned<Self>> {
         self.children

@@ -30,7 +30,6 @@ pub use node::{Node, NodeBuilder};
 use std::{fmt::Debug, pin::Pin, ptr::NonNull};
 
 type Owned<T> = Pin<Box<T>>;
-// TODO: Use Pin
 type Parent<T> = NonNull<T>;
 
 /// A Tree of [`Node`]s.
@@ -74,7 +73,7 @@ impl<T> Tree<T> {
     /// assert!(detached.root().is_same_as(target));
     /// ```
     #[inline]
-    pub fn detach_descendant(&mut self, descendant: NonNull<Node<T>>) -> Option<Tree<T>> {
+    pub fn detach_descendant(&mut self, descendant: NonNull<Node<T>>) -> Option<Self> {
         self.root_mut().detach_descendant(descendant)
     }
 
