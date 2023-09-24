@@ -158,6 +158,21 @@ impl<T: Default> Default for Tree<T> {
 }
 impl<T: Debug> Debug for Tree<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tree").field("root", self.root()).finish()
+        f.debug_struct("Tree")
+            .field("root", &self.root().debug_tree())
+            .finish()
+    }
+}
+
+/// Obtained by calling [`Node::debug_tree()`].
+pub struct DebugTree<'a, T: Debug> {
+    root: &'a Node<T>,
+}
+impl<'a, T: Debug> Debug for DebugTree<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("content", &self.root.content)
+            .field("children", &self.root.children().iter().map(|c| c.debug_tree()).collect::<Box<_>>())
+            .finish()
     }
 }

@@ -280,6 +280,22 @@ impl<T: Clone> Node<T> {
     }
 }
 
+impl<T: Debug> Node<T> {
+    /// [`Debug`] the entire subtree (`self` and its **children**).
+    #[inline]
+    pub fn debug_tree(&self) -> DebugTree<T> {
+        DebugTree { root: self }
+    }
+}
+impl<T: Debug> Debug for Node<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("content", &self.content)
+            .field("children", &self.children().iter().map(|c| &c.content).collect::<Box<_>>())
+            .finish()
+    }
+}
+
 /// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned [`UnsafeCell`].
 impl<T: Default> Node<T> {
     #[allow(clippy::should_implement_trait)]
@@ -294,15 +310,3 @@ impl<T: PartialEq> PartialEq for Node<T> {
     }
 }
 impl<T: Eq> Eq for Node<T> {}
-impl<T: Debug> Debug for Node<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Node")
-            .field("content", &self.content)
-            .field(
-                "parent",
-                &self.parent.map(|p| unsafe { &p.as_ref().content }),
-            )
-            .field("children", &self.children())
-            .finish()
-    }
-}
