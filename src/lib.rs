@@ -8,7 +8,7 @@ use std::{
     fmt::Debug,
     pin::Pin,
     rc::{Rc, Weak as WeakRc},
-    cell::RefCell,
+    cell::{RefCell, Ref},
 };
 
 pub type Strong<T> = Pin<Rc<RefCell<T>>>;
@@ -92,6 +92,26 @@ impl<T: Default> Default for Tree<T> {
 }
 impl<T: Debug> Debug for Tree<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tree").field("root", &*self.root().borrow()).finish()
+        f.debug_struct("Tree")
+            .field("root", &self.root().borrow().debug_tree())
+            .finish()
+    }
+}
+
+/// Obtained by calling [`Node::debug_tree()`].
+pub struct DebugTree<'a, T: Debug> {
+    root: &'a Node<T>,
+}
+impl<'a, T: Debug> Debug for DebugTree<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("content", &self.root.content)
+            .field("children", &self.root
+                .children()
+                .iter()
+                .map(|c| Ref::map(c.borrow(), |c| &c.content))
+                .collect::<Box<_>>()
+            )
+            .finish()
     }
 }

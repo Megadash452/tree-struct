@@ -168,7 +168,8 @@ impl<T> Node<T> {
     }
 
     /// Pushes the **child** to the end of **self**'s *children*.
-    pub fn append_child(self: Pin<&mut Self>, child: Tree<T>) {
+    /// Also see [`Self::insert_child()`].
+    pub fn append_child(self: Pin<&mut Self>, mut child: Tree<T>) {
         // Compiler ensures `self != child.root`.
         unsafe {
             let this = self.get_unchecked_mut();
@@ -177,6 +178,7 @@ impl<T> Node<T> {
         }
     }
     /// Inserts the **child** to **self**'s *children* at some index.
+    /// Also see [`Self::append_child()`].
     pub fn insert_child(self: Pin<&mut Self>, mut child: Tree<T>, index: usize) {
         // Compiler ensures `self != child.root`.
         unsafe {
@@ -253,6 +255,27 @@ impl<T: Clone> Node<T> {
     }
 }
 
+impl<T: Debug> Node<T> {
+    /// [`Debug`] the entire subtree (`self` and its **children**).
+    #[inline]
+    pub fn debug_tree(&self) -> DebugTree<T> {
+        DebugTree { root: self }
+    }
+}
+impl<T: Debug> Debug for Node<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("content", &self.content)
+            .field("children", &self
+                .children()
+                .iter()
+                .map(|c| Ref::map(c.borrow(), |c| &c.content))
+                .collect::<Box<_>>()
+            )
+            .finish()
+    }
+}
+
 /// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned pointer.
 impl<T: Default> Node<T> {
     #[allow(clippy::should_implement_trait)]
@@ -267,17 +290,3 @@ impl<T: PartialEq> PartialEq for Node<T> {
     }
 }
 impl<T: Eq> Eq for Node<T> {}
-impl<T: Debug> Debug for Node<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Node")
-            .field("content", &self.content)
-            .field(
-                "parent",
-                &self.parent.as_ref()
-                    .and_then(Weak::upgrade)
-                    .map(|p| &unsafe { &*RefCell::as_ptr(&p) }.content),
-            )
-            .field("children", &self.children())
-            .finish()
-    }
-}
