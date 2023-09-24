@@ -161,6 +161,7 @@ impl<T> Node<T> {
     }
 
     /// Pushes the **child** to the end of **self**'s *children*.
+    /// Also see [`Self::insert_child()`].
     pub fn append_child(self: Pin<&mut Self>, mut child: Tree<T>) {
         // Compiler ensures `self != child.root`.
         unsafe {
@@ -170,6 +171,7 @@ impl<T> Node<T> {
         }
     }
     /// Inserts the **child** to **self**'s *children* at some index.
+    /// Also see [`Self::append_child()`].
     pub fn insert_child(self: Pin<&mut Self>, mut child: Tree<T>, index: usize) {
         // Compiler ensures `self != child.root`.
         unsafe {
@@ -296,7 +298,7 @@ impl<T: Debug> Debug for Node<T> {
     }
 }
 
-/// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned [`UnsafeCell`].
+/// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned pointer.
 impl<T: Default> Node<T> {
     #[allow(clippy::should_implement_trait)]
     pub fn default() -> Tree<T> {
