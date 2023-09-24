@@ -168,6 +168,13 @@ pub trait Node: Any {
         IterDFS::new(self)
     }
 
+    /// [`Debug`] the entire subtree (`self` and its **children**).
+    #[inline]
+    pub fn debug_tree(&self) -> DebugTree
+    where Self: Debug {
+        DebugTree { root: self }
+    }
+
     // #[inline]
     // /// Whether two [`Node`]s are the same (that is, they reference the same object).
     // fn is_same_as(&self, other: impl AsPtr<Raw = dyn Node>) -> bool {
@@ -232,6 +239,7 @@ impl Node for BaseNode {
     }
 
     /// Pushes the **child** to the end of **self**'s *children*.
+    /// Also see [`Self::insert_child()`].
     fn append_child(self: Pin<&mut Self>, mut child: Tree) {
         // Compiler ensures `self != child.root`.
         unsafe {
@@ -241,6 +249,7 @@ impl Node for BaseNode {
         }
     }
     /// Inserts the **child** to **self**'s *children* at some index.
+    /// Also see [`Self::append_child()`].
     fn insert_child(self: Pin<&mut Self>, mut child: Tree, index: usize) {
         // Compiler ensures `self != child.root`.
         unsafe {
@@ -308,9 +317,6 @@ impl Clone for BaseNode {
         }
     }
 }
-impl BaseNode {
-    
-}
 
 /// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned [`UnsafeCell`].
 impl BaseNode {
@@ -326,15 +332,11 @@ impl PartialEq for BaseNode {
     }
 }
 impl Eq for BaseNode {}
-impl Debug for BaseNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Node")
-            .field("content", &self.content)
-            .field(
-                "parent",
-                &self.parent.map(|p| unsafe { &p.as_ref().content }),
-            )
-            .field("children", &self.children())
-            .finish()
-    }
-}
+// impl Debug for BaseNode {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("Node")
+//             .field("content", &self.content)
+//             .field("children", &self.children().iter().map(|c| &c.content).collect::<Box<_>>())
+//             .finish()
+//     }
+// }
