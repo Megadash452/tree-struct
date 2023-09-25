@@ -9,27 +9,27 @@ fn siblings() {
         .build();
 
     // Siblings of "child a"
-    let target = tree.root().borrow().children()[0].borrow();
+    let target = &tree.root().children()[0];
     assert_eq!(target.prev_sibling(), None);
     assert_eq!(
-        &*target.next_sibling().unwrap().borrow(),
-        &*Node::builder("child b").build().root().borrow()
+        target.next_sibling().unwrap(),
+        Node::builder("child b").build().root()
     );
     // Siblings of "child b"
-    let target = tree.root().borrow().children()[1].borrow();
+    let target = &tree.root().children()[1];
     assert_eq!(
-        &*target.prev_sibling().unwrap().borrow(),
-        &*Node::builder("child a").build().root().borrow()
+        target.prev_sibling().unwrap(),
+        Node::builder("child a").build().root()
     );
     assert_eq!(
-        &*target.next_sibling().unwrap().borrow(),
-        &*Node::builder("child c").build().root().borrow()
+        target.next_sibling().unwrap(),
+        Node::builder("child c").build().root()
     );
     // Siblings of "child c"
-    let target = tree.root().borrow().children()[2].borrow();
+    let target = &tree.root().children()[2];
     assert_eq!(
-        &*target.prev_sibling().unwrap().borrow(),
-        &*Node::builder("child b").build().root().borrow()
+        target.prev_sibling().unwrap(),
+        Node::builder("child b").build().root()
     );
     assert_eq!(target.next_sibling(), None);
 }
@@ -43,39 +43,39 @@ fn clone() {
         .child(Node::builder("child c"))
         .build();
 
-    let target = tree.root().borrow().children()[1]; // "child b"
+    let target = &tree.root().children()[1]; // "child b"
 
     // Regular clone
-    let clone = Node::clone(&*target.borrow());
+    let clone = Node::clone(&*target);
     assert!(!clone.is_same_as(target));
-    assert_eq!(clone.content, target.borrow().content);
+    assert_eq!(&*clone.content(), &*target.content());
     assert!(clone.parent().is_none());
     assert!(clone.children().is_empty());
 
     // Deep clone
-    let clone = target.borrow().clone_deep().root().borrow();
+    let clone = target.clone_deep().root();
     // let clone = clone.root();
     assert!(!clone.is_same_as(target));
-    assert_eq!(&*clone, &*target.borrow());
+    assert_eq!(&clone, target);
     assert!(clone.parent().is_none());
 }
 
 #[test]
 fn detach() {
-    let mut tree = Node::builder("parent")
+    let tree = Node::builder("parent")
         .child(Node::builder("child a")
             .child(Node::builder("child d")))
         .child(Node::builder("child b"))
         .child(Node::builder("child c"))
         .build();
 
-    let target = tree.root().borrow().children()[2];
-    let detached = target.borrow_mut().detach().unwrap();
+    let target = &tree.root().children()[2];
+    let detached = target.detach().unwrap();
     assert!(detached.root().is_same_as(target));
     assert_eq!(detached, Node::builder("child c").build());
 
-    let target = tree.root().borrow().children()[0].borrow().children()[0];
-    let detached = target.borrow_mut().detach().unwrap();
+    let target = &tree.root().children()[0].children()[0];
+    let detached = &target.detach().unwrap();
     assert!(detached.root().is_same_as(target));
     assert_eq!(detached, Node::builder("child d").build());
 
@@ -90,7 +90,7 @@ fn detach() {
 
 #[test]
 fn append_child() {
-    let mut tree = Node::builder("parent")
+    let tree = Node::builder("parent")
         .child(Node::builder("child a"))
         .child(Node::builder("child b")
             .child(Node::builder("child d")))
@@ -99,26 +99,26 @@ fn append_child() {
 
     // -- Append a new node.
     let new = Node::builder("child e").build();
-    tree.root().borrow_mut().append_child(new);
-    assert_eq!(tree.root().borrow().children().last().unwrap().borrow().content, "child e");
+    tree.root().append_child(new);
+    assert_eq!(*tree.root().children().last().unwrap().content(), "child e");
 
     // -- Append a node that was already in the tree.
-    let target = tree.root().borrow().children()[1].borrow().children()[0];
-    let detached = tree.root().borrow().children()[1].borrow().children()[0].borrow_mut().detach().unwrap();
-    tree.root().borrow_mut().append_child(detached);
-    assert!(tree.root().borrow().children().last().unwrap().borrow().is_same_as(target));
-    assert_eq!(tree.root().borrow().children().last().unwrap().borrow().content, "child d");
-    assert!(tree.root().borrow().children()[1].borrow().children().is_empty());
+    let target = &tree.root().children()[1].children()[0];
+    let detached = tree.root().children()[1].children()[0].detach().unwrap();
+    tree.root().append_child(detached);
+    assert!(tree.root().children().last().unwrap().is_same_as(target));
+    assert_eq!(*tree.root().children().last().unwrap().content(), "child d");
+    assert!(tree.root().children()[1].children().is_empty());
 
     // -- Append a node from another tree.
-    let mut other_tree = Node::builder("other parent")
+    let other_tree = Node::builder("other parent")
         .child(Node::builder("other child a"))
         .build();
 
-    let target = other_tree.root().borrow().children()[0];
-    tree.root().borrow_mut().append_child(target.borrow_mut().detach().unwrap());
-    assert!(tree.root().borrow().children().last().unwrap().borrow().is_same_as(target));
-    assert!(other_tree.root().borrow().children().is_empty());
+    let target = &other_tree.root().children()[0];
+    tree.root().append_child(target.detach().unwrap());
+    assert!(tree.root().children().last().unwrap().is_same_as(target));
+    assert!(other_tree.root().children().is_empty());
 
     // -- End
     assert_eq!(

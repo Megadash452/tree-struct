@@ -21,7 +21,7 @@ fn breadth_first() {
         .build();
 
     assert_eq!(
-        tree.iter_bfs().map(|n| n.borrow().content).collect::<Vec<_>>(),
+        tree.iter_bfs().map(|n| *n.content()).collect::<Vec<_>>(),
         vec!['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o']
     );
 }
@@ -47,7 +47,7 @@ fn depth_first() {
         .build();
 
     assert_eq!(
-        tree.iter_dfs().map(|n| n.borrow().content).collect::<Vec<_>>(),
+        tree.iter_dfs().map(|n| *n.content()).collect::<Vec<_>>(),
         vec!['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o']
     );
 }

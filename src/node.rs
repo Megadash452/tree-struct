@@ -1,5 +1,5 @@
 use super::*;
-use std::{ptr::eq as ptr_eq, marker::PhantomPinned};
+use std::marker::PhantomPinned;
 
 /// Helper struct to build a [`Tree`] of [`Node`]s.
 ///
@@ -60,12 +60,7 @@ impl<T> NodeBuilder<T> {
     /// The children will be made into [`Pin`]ned [`Node`]s with the proper **parent**.
     pub fn build(self) -> Tree<T> {
         // Do not pin at first to be able to `Rc::downgrade()` freely.
-        let root = Rc::new(RefCell::new(Node {
-            content: self.content,
-            parent: None,
-            children: vec![],
-            _pin: PhantomPinned,
-        }));
+        let root = Rc::new(RefCell::new(InnerNode::new(self.content)));
     
         root.borrow_mut().children = Self::build_children(
             Rc::downgrade(&root),
@@ -73,18 +68,14 @@ impl<T> NodeBuilder<T> {
         );
         
         // Can be pinned here because no other unpinned Rcs exist
-        Tree::from(unsafe { Pin::new_unchecked(root) })
+        Tree::from(Node(unsafe { Pin::new_unchecked(root) }))
     }
-    fn build_children(parent: Weak<Node<T>>, children: Vec<Self>) -> Vec<Strong<Node<T>>> {
+    fn build_children(parent: Weak<InnerNode<T>>, children: Vec<Self>) -> Vec<Node<T>> {
         children.into_iter()
             .map(|builder| {
                 // Do not pin at first to be able to `Rc::downgrade()` freely.
-                let child = Rc::new(RefCell::new(Node {
-                    content: builder.content,
-                    parent: Some(Weak::clone(&parent)),
-                    children: vec![],
-                    _pin: PhantomPinned,
-                }));
+                let child = Rc::new(RefCell::new(InnerNode::new(builder.content)));
+                child.borrow_mut().parent = Some(Weak::clone(&parent));
 
                 child.borrow_mut().children = Self::build_children(
                     Rc::downgrade(&child),
@@ -92,40 +83,27 @@ impl<T> NodeBuilder<T> {
                 );
 
                 // Can be pinned here because no other unpinned Rcs exist
-                unsafe { Pin::new_unchecked(child) }
+                Node(unsafe { Pin::new_unchecked(child) })
             })
             .collect()
     }
 }
 
-pub struct Node<T> {
+#[derive(Default)]
+pub struct InnerNode<T> {
     pub content: T,
     parent: Option<Weak<Self>>,
-    children: Vec<Strong<Self>>,
+    pub(super) children: Vec<Node<T>>,
     _pin: PhantomPinned,
 }
-impl<T> Node<T> {
-    #[inline]
-    pub fn builder(content: T) -> NodeBuilder<T> {
-        NodeBuilder::new(content)
-    }
-
-    /// Get a [`Strong`] reference to **this** [`Node`]'s **parent**,
-    /// which can be [`mutably`](RefCell::borrow_mut()) and [`immutably`](RefCell::borrow()) borrowed.
-    pub fn parent(&self) -> Option<Strong<Self>> {
-        self.parent
-            .as_ref()
-            .and_then(|p| unsafe {
-                Some(Pin::new_unchecked(Weak::upgrade(p)?))
-            })
-    }
-    /// Get [`Strong`] references to **this** [`Node`]'s **children**,
-    /// which can be [`mutably`](RefCell::borrow_mut()) and [`immutably`](RefCell::borrow()) borrowed.
-    pub fn children(&self) -> Box<[Strong<Self>]> {
-        self.children
-            .iter()
-            .map(|child| Pin::clone(child))
-            .collect()
+impl<T> InnerNode<T> {
+    fn new(content: T) -> Self {
+        Self {
+            content: content,
+            parent: None,
+            children: vec![],
+            _pin: PhantomPinned,
+        }
     }
 
     // /// A [`Node`] is a **descendant** of another [`Node`] if:
@@ -147,83 +125,135 @@ impl<T> Node<T> {
     //
     //     false
     // }
-    fn find_self_next<'a>(&'a self, mut iter: impl Iterator<Item = &'a Strong<Self>>) -> Option<Strong<Self>> {
-        // Check through all children of parent until `self` is found.
-        // Should not use `RefCell::borrow()` because it can cause an unecessary panic!
-        iter.find(|sib|
-            ptr_eq(self, sib.as_ptr())
-        );
-        iter.next().map(Pin::clone)
+}
+impl<T: Debug> Debug for InnerNode<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("content", &self.content)
+            .field("children", &self
+                .children
+                .iter()
+                .map(|c| Ref::map(c.borrow(), |c| &c.content))
+                .collect::<Box<_>>()
+            )
+            .finish()
+    }
+}
+impl<T: PartialEq> PartialEq for InnerNode<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.content == other.content
+    }
+}
+impl<T: Eq> Eq for InnerNode<T> {}
+
+
+/// The outward-facing Node is the node struct wrapped in a [`cell`](RefCell) and [`pointer`](Rc).
+pub struct Node<T>(Pin<Rc<RefCell<InnerNode<T>>>>);
+impl<T> Node<T> {
+    #[inline]
+    fn borrow(&self) -> Ref<InnerNode<T>> {
+        self.0.borrow()
+    }
+    fn borrow_mut(&self) -> Pin<RefMut<InnerNode<T>>> {
+        unsafe { Pin::new_unchecked(self.0.borrow_mut()) }
+    }
+    fn downgrade(&self) -> Weak<InnerNode<T>> {
+        unsafe { Rc::downgrade(&Pin::into_inner_unchecked(self.ref_clone().0)) }
+    }
+
+    /// Check through all children of parent until `self` is found.
+    fn find_self_next<'a>(&'a self, mut iter: impl Iterator<Item = &'a Self>) -> Option<Self> {
+        iter.find(|sib| ptr_eq(self.as_ptr(), sib.as_ptr()));
+        iter.next().map(Node::ref_clone)
+    }
+
+    #[inline]
+    pub fn builder(content: T) -> NodeBuilder<T> {
+        NodeBuilder::new(content)
+    }
+
+    /// Get a [`Strong`] reference to **this** [`Node`]'s **parent**,
+    /// which can be [`mutably`](RefCell::borrow_mut()) and [`immutably`](RefCell::borrow()) borrowed.
+    pub fn parent(&self) -> Option<Self> {
+        self.0.borrow().parent
+            .as_ref()
+            .and_then(|p| unsafe {
+                Some(Self(Pin::new_unchecked(Weak::upgrade(p)?)))
+            })
+    }
+    /// Get [`Strong`] references to **this** [`Node`]'s **children**,
+    /// which can be [`mutably`](RefCell::borrow_mut()) and [`immutably`](RefCell::borrow()) borrowed.
+    pub fn children(&self) -> Box<[Self]> {
+        self.0.borrow().children
+            .iter()
+            .map(|child| child.ref_clone())
+            .collect()
+    }
+    pub fn content(&self) -> Ref<T> {
+        Ref::map(self.borrow(), |n| &n.content)
+    }
+    pub fn content_mut(&self) -> RefMut<T> {
+        RefMut::map(unsafe { Pin::into_inner_unchecked(self.borrow_mut()) }, |n| &mut n.content)
     }
 
     /// Returns the [`Node`] immediately following this one in the **parent**'s [`children`](Node::children).
     /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *last* child of the **parent**.
-    pub fn next_sibling(&self) -> Option<Strong<Self>> {
-        self.find_self_next(self.parent()?.borrow().children.iter())
+    pub fn next_sibling(&self) -> Option<Self> {
+        self.find_self_next(self.parent()?.children().iter())
     }
     /// Returns the [`Node`] immediately preceeding this one in the **parent**'s [`children`](Node::children).
     /// Otherwise returns [`None`] if `self` has no **parent**, or if it is the *first* child of the **parent**.
-    pub fn prev_sibling(&self) -> Option<Strong<Self>> {
-        self.find_self_next(self.parent()?.borrow().children.iter().rev())
+    pub fn prev_sibling(&self) -> Option<Self> {
+        self.find_self_next(self.parent()?.children().iter().rev())
     }
 
     /// Pushes the **child** to the end of **self**'s *children*.
     /// Also see [`Self::insert_child()`].
-    pub fn append_child(self: Pin<&mut Self>, mut child: Tree<T>) {
-        // Compiler ensures `self != child.root`.
-        unsafe {
-            let this = self.get_unchecked_mut();
-            child.root().borrow_mut().parent = Some(todo!());
-            this.children.push(child.root)
-        }
+    pub fn append_child(&self, child: Tree<T>) {
+        // A Tree can only be obtained from `NodeBuilder`, `detach` and `clone_deep`,
+        // so it is guaranteed to not be a descendant of self.
+        unsafe { child.root.borrow_mut().as_mut().get_unchecked_mut() }.parent = Some(self.downgrade());
+        self.0.borrow_mut().children.push(child.root)
     }
     /// Inserts the **child** to **self**'s *children* at some index.
     /// Also see [`Self::append_child()`].
-    pub fn insert_child(self: Pin<&mut Self>, mut child: Tree<T>, index: usize) {
-        // Compiler ensures `self != child.root`.
-        unsafe {
-            let this = self.get_unchecked_mut() ;
-            child.root().borrow_mut().parent = Some(todo!());
-            this.children.insert(index, child.root)
-        }
+    pub fn insert_child(&self, child: Tree<T>, index: usize) {
+        // A Tree can only be obtained from `NodeBuilder`, `detach` and `clone_deep`,
+        // so it is guaranteed to not be a descendant of self.
+        unsafe { child.root.borrow_mut().as_mut().get_unchecked_mut() }.parent = Some(self.downgrade());
+        self.0.borrow_mut().children.insert(index, child.root)
     }
 
     /// Removes **this** [`Node`] from its **parent** and returns the *detached [`Node`]* with ownership (aka a [`Tree`]).
     /// If `self` has no **parent**, either because it is a *root* or it is not part of a [`Tree`], this will return [`None`].
-    pub fn detach(self: Pin<&mut Self>) -> Option<Tree<T>> {
+    pub fn detach(&self) -> Option<Tree<T>> {
         let parent = self.parent()?;
         let mut parent = parent.borrow_mut();
+        let parent = unsafe { parent.as_mut().get_unchecked_mut() };
 
         // Find the index of **descendant** to remove it from its parent's children list
         let index = parent.children.iter()
-            .position(|child| ptr_eq(self.as_ref().get_ref(), child.as_ptr()))
+            .position(|child| ptr_eq(self.as_ptr(), child.as_ptr()))
             .expect("Node is not found in its parent");
 
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
         let root = parent.children.remove(index);
-        root.borrow_mut().parent = None;
+        unsafe { root.borrow_mut().as_mut().get_unchecked_mut().parent = None };
         Some(Tree::from(root))
+    }
+
+    /// Clones the Rc and increments the internal reference counter.
+    pub fn ref_clone(&self) -> Self {
+        Self(Pin::clone(&self.0))
     }
 
     #[inline]
     /// Whether two [`Node`]s are the same (that is, they reference the same object).
-    pub fn is_same_as(&self, other: Strong<Self>) -> bool {
-        ptr_eq(self, other.as_ptr())
+    pub fn is_same_as(&self, other: &Self) -> bool {
+        ptr_eq(self.as_ptr(), other.as_ptr())
     }
-}
-
-impl<T: Clone> Clone for Node<T> {
-    /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
-    /// The resulting cloned [`Node`] will have no **parent** or **children**.
-    ///
-    /// For a method that clones the [`Node`] *and* its subtree, see [`Node::clone_deep`].
-    fn clone(&self) -> Self {
-        Self {
-            content: self.content.clone(),
-            parent: None,
-            children: vec![],
-            _pin: PhantomPinned,
-        }
+    fn as_ptr(&self) -> *mut InnerNode<T> {
+        self.0.as_ptr()
     }
 }
 impl<T: Clone> Node<T> {
@@ -233,60 +263,58 @@ impl<T: Clone> Node<T> {
     /// For a method that clones the [`Node`] but *not* its subtree, see [`Node::clone`].
     pub fn clone_deep(&self) -> Tree<T> {
         // Do not pin at first to be able to `Rc::downgrade()` freely.
-        let root = Rc::new(RefCell::new(self.clone()));
+        let root = Rc::new(RefCell::new(InnerNode::new(self.borrow().content.clone())));
 
         root.borrow_mut().children = self.clone_children_deep(Rc::downgrade(&root));
 
         // Can be pinned here because no other unpinned Rcs exist
-        Tree::from(unsafe { Pin::new_unchecked(root) })
+        Tree::from(Self(unsafe { Pin::new_unchecked(root) }))
     }
-    fn clone_children_deep(&self, parent: Weak<Self>) -> Vec<Strong<Self>> {
-        self.children
+    fn clone_children_deep(&self, parent: Weak<InnerNode<T>>) -> Vec<Self> {
+        self.children()
             .iter()
             .map(|child| {
                 // Do not pin at first to be able to `Rc::downgrade()` freely.
-                let cloned = Rc::new(RefCell::new(child.borrow().clone()));
+                let cloned = Rc::new(RefCell::new(InnerNode::new(child.borrow().content.clone())));
                 cloned.borrow_mut().parent = Some(Weak::clone(&parent));
-                cloned.borrow_mut().children = child.borrow().clone_children_deep(Rc::downgrade(&cloned));
+                cloned.borrow_mut().children = child.clone_children_deep(Rc::downgrade(&cloned));
                 // Can be pinned here because no other unpinned Rcs exist
-                unsafe { Pin::new_unchecked(cloned) }
+                Self(unsafe { Pin::new_unchecked(cloned) })
             })
             .collect()
     }
 }
-
 impl<T: Debug> Node<T> {
     /// [`Debug`] the entire subtree (`self` and its **children**).
     #[inline]
     pub fn debug_tree(&self) -> DebugTree<T> {
-        DebugTree { root: self }
-    }
-}
-impl<T: Debug> Debug for Node<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Node")
-            .field("content", &self.content)
-            .field("children", &self
-                .children()
-                .iter()
-                .map(|c| Ref::map(c.borrow(), |c| &c.content))
-                .collect::<Box<_>>()
-            )
-            .finish()
+        DebugTree { root: self.borrow() }
     }
 }
 
-/// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned pointer.
-impl<T: Default> Node<T> {
-    #[allow(clippy::should_implement_trait)]
-    pub fn default() -> Tree<T> {
-        NodeBuilder::default().build()
+impl<T: Clone> Clone for Node<T> {
+    /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
+    /// The resulting cloned [`Node`] will have no **parent** or **children**.
+    ///
+    /// For a method that clones the [`Node`] *and* its subtree, see [`Node::clone_deep`].
+    fn clone(&self) -> Self {
+        Self(Rc::pin(RefCell::new(InnerNode::new(self.borrow().content.clone()))))
     }
 }
-
+impl<T: Default> Default for Node<T> {
+    fn default() -> Self {
+        Self(Rc::pin(RefCell::new(InnerNode::default())))
+    }
+}
 impl<T: PartialEq> PartialEq for Node<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.content == other.content
+        (&*self.0.borrow()).eq(&*other.0.borrow())
     }
 }
 impl<T: Eq> Eq for Node<T> {}
+impl<T: Debug> Debug for Node<T> {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.0, f)
+    }
+}

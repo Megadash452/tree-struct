@@ -4,14 +4,15 @@ mod node;
 
 pub use iter::{IterBFS, IterDFS};
 pub use node::{Node, NodeBuilder};
+use node::InnerNode;
 use std::{
     fmt::Debug,
     pin::Pin,
+    ptr::eq as ptr_eq,
     rc::{Rc, Weak as WeakRc},
-    cell::{RefCell, Ref},
+    cell::{RefCell, Ref, RefMut},
 };
 
-pub type Strong<T> = Pin<Rc<RefCell<T>>>;
 /// TODO: pin?
 type Weak<T> = WeakRc<RefCell<T>>;
 
@@ -24,7 +25,7 @@ type Weak<T> = WeakRc<RefCell<T>>;
 /// 
 /// Although [`Node`]s use shared ownership though [`Reference Counting`](Rc), a [`Tree`] implies more explicitly that the specific [`Node`] is owned.
 pub struct Tree<T> {
-    root: Strong<Node<T>>,
+    root: Node<T>,
 }
 impl<T> Tree<T> {
     #[inline]
@@ -33,8 +34,8 @@ impl<T> Tree<T> {
     }
 
     #[inline]
-    pub fn root(&self) -> Strong<Node<T>> {
-        Pin::clone(&self.root)
+    pub fn root(&self) -> Node<T> {
+        self.root.ref_clone()
     }
 
     /// Iterate over all the [`Node`]s of the [`Tree`] using **Breadth-First Search**.
@@ -52,7 +53,7 @@ impl<T> Tree<T> {
 /* Only Tree should implement IntoIter because , semantically, it makes sense to iterate through a Tree, but doesn't make sense to iterate through a Node.
 Node still has iter_bfs() and iter_dfs() in case the user wants to use it that way. */
 impl<T> IntoIterator for &Tree<T> {
-    type Item = Strong<Node<T>>;
+    type Item = Node<T>;
     type IntoIter = IterBFS<T>;
 
     #[inline]
@@ -67,49 +68,57 @@ impl<T> From<NodeBuilder<T>> for Tree<T> {
         builder.build()
     }
 }
-impl<T> From<Strong<Node<T>>> for Tree<T> {
+impl<T> From<Node<T>> for Tree<T> {
     #[inline]
-    fn from(root: Strong<Node<T>>) -> Self {
+    fn from(root: Node<T>) -> Self {
         Tree { root }
     }
 }
 impl<T: Clone> Clone for Tree<T> {
     /// Clones the entire [`Tree`] by calling [`Node::clone_deep()`] on the **root**.
     fn clone(&self) -> Self {
-        self.root().borrow().clone_deep()
+        self.root.clone_deep()
     }
 }
 impl<T: PartialEq> PartialEq for Tree<T> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.root().borrow().eq(&*other.root().borrow())
+        self.root.eq(&other.root)
+    }
+}
+impl<T: PartialEq> PartialEq<Tree<T>>for &Tree<T> {
+    #[inline]
+    fn eq(&self, other: &Tree<T>) -> bool {
+        self.root.eq(&other.root)
     }
 }
 impl<T: Eq> Eq for Tree<T> {}
 impl<T: Default> Default for Tree<T> {
+    #[inline]
     fn default() -> Self {
-        NodeBuilder::default().build()
+        Self::from(Node::default())
     }
 }
 impl<T: Debug> Debug for Tree<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tree")
-            .field("root", &self.root().borrow().debug_tree())
+            .field("root", &self.root().debug_tree())
             .finish()
     }
 }
 
 /// Obtained by calling [`Node::debug_tree()`].
 pub struct DebugTree<'a, T: Debug> {
-    root: &'a Node<T>,
+    root: Ref<'a, InnerNode<T>>,
 }
 impl<'a, T: Debug> Debug for DebugTree<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.root.content)
             .field("children", &self.root
-                .children()
+                .children
                 .iter()
-                .map(|c| Ref::map(c.borrow(), |c| &c.content))
+                .map(|c| c.debug_tree())
                 .collect::<Box<_>>()
             )
             .finish()

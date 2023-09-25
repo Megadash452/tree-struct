@@ -9,10 +9,10 @@ use std::collections::VecDeque;
 pub struct IterBFS<T> {
     /* Apparently a Vec would perform better than a LinkedList in this case.
     https://stackoverflow.com/questions/40848918/are-there-queue-and-stack-collections-in-rust */
-    queue: VecDeque<Strong<Node<T>>>
+    queue: VecDeque<Node<T>>
 }
 impl<T> IterBFS<T> {
-    pub fn new(node: Strong<Node<T>>) -> Self {
+    pub fn new(node: Node<T>) -> Self {
         let mut queue = VecDeque::new();
         // Step 1: Enqueue the root.
         queue.push_back(node);
@@ -20,14 +20,14 @@ impl<T> IterBFS<T> {
     }
 }
 impl<T> Iterator for IterBFS<T> {
-    type Item = Strong<Node<T>>;
+    type Item = Node<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Step 2: Get next from queue.
         let popped = self.queue.pop_front();
         if let Some(popped) = &popped {
             // Step 3: Enqueue its children.
-            self.queue.extend(popped.borrow().children().to_vec());
+            self.queue.extend(popped.children().into_vec());
         }
         popped
     }
@@ -41,16 +41,16 @@ impl<T> Iterator for IterBFS<T> {
 pub struct IterDFS<T> {
     /* Apparently a Vec would perform better than a LinkedList in this case.
     https://stackoverflow.com/questions/40848918/are-there-queue-and-stack-collections-in-rust */
-    stack: Vec<Strong<Node<T>>>
+    stack: Vec<Node<T>>
 }
 impl<T> IterDFS<T> {
-    pub fn new(node: Strong<Node<T>>) -> Self {
+    pub fn new(node: Node<T>) -> Self {
         // Step 1: Push the root.
         Self { stack: vec![node] }
     }
 }
 impl<T> Iterator for IterDFS<T> {
-    type Item = Strong<Node<T>>;
+    type Item = Node<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Step 2: Get next from stack.
@@ -58,7 +58,7 @@ impl<T> Iterator for IterDFS<T> {
         if let Some(popped) = &popped {
             // Step 3: Push its children.
             // Reverse because the first child should be popped next from the stack, so it must go last in the stack.
-            self.stack.extend(popped.borrow().children().to_vec().into_iter().rev());
+            self.stack.extend(popped.children().into_vec().into_iter().rev());
         }
         popped
     }
