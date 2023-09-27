@@ -8,7 +8,6 @@ use node::InnerNode;
 use std::{
     fmt::Debug,
     pin::Pin,
-    ptr::eq as ptr_eq,
     rc::{Rc, Weak as WeakRc},
     cell::{RefCell, Ref, RefMut},
 };
@@ -24,6 +23,7 @@ type Weak<T> = WeakRc<RefCell<T>>;
 /// When a [`Node`] method *asks* for this type as argument, it means it is **taking ownership** of the [`Node`]s.
 /// 
 /// Although [`Node`]s use shared ownership though [`Reference Counting`](Rc), a [`Tree`] implies more explicitly that the specific [`Node`] is owned.
+#[derive(Default, PartialEq, Eq)]
 pub struct Tree<T> {
     root: Node<T>,
 }
@@ -78,25 +78,6 @@ impl<T: Clone> Clone for Tree<T> {
     /// Clones the entire [`Tree`] by calling [`Node::clone_deep()`] on the **root**.
     fn clone(&self) -> Self {
         self.root.clone_deep()
-    }
-}
-impl<T: PartialEq> PartialEq for Tree<T> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.root.eq(&other.root)
-    }
-}
-impl<T: PartialEq> PartialEq<Tree<T>>for &Tree<T> {
-    #[inline]
-    fn eq(&self, other: &Tree<T>) -> bool {
-        self.root.eq(&other.root)
-    }
-}
-impl<T: Eq> Eq for Tree<T> {}
-impl<T: Default> Default for Tree<T> {
-    #[inline]
-    fn default() -> Self {
-        Self::from(Node::default())
     }
 }
 impl<T: Debug> Debug for Tree<T> {

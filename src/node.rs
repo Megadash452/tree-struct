@@ -99,7 +99,7 @@ pub struct InnerNode<T> {
 impl<T> InnerNode<T> {
     fn new(content: T) -> Self {
         Self {
-            content: content,
+            content,
             parent: None,
             children: vec![],
             _pin: PhantomPinned,
@@ -147,7 +147,10 @@ impl<T: PartialEq> PartialEq for InnerNode<T> {
 impl<T: Eq> Eq for InnerNode<T> {}
 
 
-/// The outward-facing Node is the node struct wrapped in a [`cell`](RefCell) and [`pointer`](Rc).
+/// The outward-facing Node is the node struct wrapped in a [`cell`](RefCell) and [`reference counted pointer`](Rc).
+/// 
+/// A [`Node`] has 1 [`parent`](Self::parent()) and multiple [`children`](Self::children()).
+/// It also stores [`content`](Self::content()) of type **`T`**.
 pub struct Node<T>(Pin<Rc<RefCell<InnerNode<T>>>>);
 impl<T> Node<T> {
     #[inline]
@@ -158,12 +161,13 @@ impl<T> Node<T> {
         unsafe { Pin::new_unchecked(self.0.borrow_mut()) }
     }
     fn downgrade(&self) -> Weak<InnerNode<T>> {
-        unsafe { Rc::downgrade(&Pin::into_inner_unchecked(self.ref_clone().0)) }
+        // Casting Pin<P> to P is ok as long as nothing is moved later
+        unsafe { Rc::downgrade(&*(&self.0 as *const _ as *const Rc<_>)) }
     }
 
     /// Check through all children of parent until `self` is found.
     fn find_self_next<'a>(&'a self, mut iter: impl Iterator<Item = &'a Self>) -> Option<Self> {
-        iter.find(|sib| ptr_eq(self.as_ptr(), sib.as_ptr()));
+        iter.find(|sib| self.is_same_as(sib));
         iter.next().map(Node::ref_clone)
     }
 
@@ -172,21 +176,20 @@ impl<T> Node<T> {
         NodeBuilder::new(content)
     }
 
-    /// Get a [`Strong`] reference to **this** [`Node`]'s **parent**,
-    /// which can be [`mutably`](RefCell::borrow_mut()) and [`immutably`](RefCell::borrow()) borrowed.
     pub fn parent(&self) -> Option<Self> {
-        self.0.borrow().parent
+        self.borrow()
+            .parent
             .as_ref()
             .and_then(|p| unsafe {
                 Some(Self(Pin::new_unchecked(Weak::upgrade(p)?)))
             })
     }
-    /// Get [`Strong`] references to **this** [`Node`]'s **children**,
-    /// which can be [`mutably`](RefCell::borrow_mut()) and [`immutably`](RefCell::borrow()) borrowed.
+    /// Allocates a *slice* of all of [`Node`]'s children, increasing all of their *reference counter*.
     pub fn children(&self) -> Box<[Self]> {
-        self.0.borrow().children
+        self.borrow()
+            .children
             .iter()
-            .map(|child| child.ref_clone())
+            .map(|c| c.ref_clone())
             .collect()
     }
     pub fn content(&self) -> Ref<T> {
@@ -208,20 +211,24 @@ impl<T> Node<T> {
     }
 
     /// Pushes the **child** to the end of **self**'s *children*.
+    /// **child** is required to be a **root** (i.e. have no *parent*), and [`Tree`] guarantees that.
+    /// 
     /// Also see [`Self::insert_child()`].
     pub fn append_child(&self, child: Tree<T>) {
-        // A Tree can only be obtained from `NodeBuilder`, `detach` and `clone_deep`,
-        // so it is guaranteed to not be a descendant of self.
-        unsafe { child.root.borrow_mut().as_mut().get_unchecked_mut() }.parent = Some(self.downgrade());
-        self.0.borrow_mut().children.push(child.root)
+        unsafe {
+            child.root.borrow_mut().as_mut().get_unchecked_mut().parent = Some(self.downgrade());
+            self.borrow_mut().as_mut().get_unchecked_mut().children.push(child.root)
+        }
     }
     /// Inserts the **child** to **self**'s *children* at some index.
+    /// **child** is required to be a **root** (i.e. have no *parent*), and [`Tree`] guarantees that.
+    /// 
     /// Also see [`Self::append_child()`].
     pub fn insert_child(&self, child: Tree<T>, index: usize) {
-        // A Tree can only be obtained from `NodeBuilder`, `detach` and `clone_deep`,
-        // so it is guaranteed to not be a descendant of self.
-        unsafe { child.root.borrow_mut().as_mut().get_unchecked_mut() }.parent = Some(self.downgrade());
-        self.0.borrow_mut().children.insert(index, child.root)
+        unsafe {
+            child.root.borrow_mut().as_mut().get_unchecked_mut().parent = Some(self.downgrade());
+            self.borrow_mut().as_mut().get_unchecked_mut().children.insert(index, child.root)
+        }
     }
 
     /// Removes **this** [`Node`] from its **parent** and returns the *detached [`Node`]* with ownership (aka a [`Tree`]).
@@ -233,7 +240,7 @@ impl<T> Node<T> {
 
         // Find the index of **descendant** to remove it from its parent's children list
         let index = parent.children.iter()
-            .position(|child| ptr_eq(self.as_ptr(), child.as_ptr()))
+            .position(|child| self.is_same_as(child))
             .expect("Node is not found in its parent");
 
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
@@ -242,7 +249,7 @@ impl<T> Node<T> {
         Some(Tree::from(root))
     }
 
-    /// Clones the Rc and increments the internal reference counter.
+    /// Clones the [`Rc`] and increments the internal reference counter of this [`Node`].
     pub fn ref_clone(&self) -> Self {
         Self(Pin::clone(&self.0))
     }
@@ -250,10 +257,13 @@ impl<T> Node<T> {
     #[inline]
     /// Whether two [`Node`]s are the same (that is, they reference the same object).
     pub fn is_same_as(&self, other: &Self) -> bool {
-        ptr_eq(self.as_ptr(), other.as_ptr())
-    }
-    fn as_ptr(&self) -> *mut InnerNode<T> {
-        self.0.as_ptr()
+        unsafe {
+            Rc::<RefCell<InnerNode<T>>>::ptr_eq(
+                // Casting Pin<P> to P is ok as long as nothing is moved later
+                &*(&self.0 as *const _ as *const Rc<_>),
+                &*(&other.0 as *const _ as *const Rc<_>)
+            )
+        }
     }
 }
 impl<T: Clone> Node<T> {
@@ -308,13 +318,12 @@ impl<T: Default> Default for Node<T> {
 }
 impl<T: PartialEq> PartialEq for Node<T> {
     fn eq(&self, other: &Self) -> bool {
-        (&*self.0.borrow()).eq(&*other.0.borrow())
+        self.0.borrow().eq(&*other.0.borrow())
     }
 }
 impl<T: Eq> Eq for Node<T> {}
 impl<T: Debug> Debug for Node<T> {
-    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.0, f)
+        Debug::fmt(&self.0.borrow(), f)
     }
 }

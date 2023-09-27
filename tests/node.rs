@@ -46,7 +46,7 @@ fn clone() {
     let target = &tree.root().children()[1]; // "child b"
 
     // Regular clone
-    let clone = Node::clone(&*target);
+    let clone = target.clone();
     assert!(!clone.is_same_as(target));
     assert_eq!(&*clone.content(), &*target.content());
     assert!(clone.parent().is_none());
@@ -75,7 +75,7 @@ fn detach() {
     assert_eq!(detached, Node::builder("child c").build());
 
     let target = &tree.root().children()[0].children()[0];
-    let detached = &target.detach().unwrap();
+    let detached = target.detach().unwrap();
     assert!(detached.root().is_same_as(target));
     assert_eq!(detached, Node::builder("child d").build());
 
@@ -104,7 +104,7 @@ fn append_child() {
 
     // -- Append a node that was already in the tree.
     let target = &tree.root().children()[1].children()[0];
-    let detached = tree.root().children()[1].children()[0].detach().unwrap();
+    let detached = target.detach().unwrap();
     tree.root().append_child(detached);
     assert!(tree.root().children().last().unwrap().is_same_as(target));
     assert_eq!(*tree.root().children().last().unwrap().content(), "child d");
