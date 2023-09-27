@@ -8,12 +8,16 @@ use node::InnerNode;
 use std::{
     fmt::Debug,
     pin::Pin,
-    rc::{Rc, Weak as WeakRc},
-    cell::{RefCell, Ref, RefMut},
+    sync::{Arc, Weak as WeakArc},
+};
+use parking_lot::{
+    RwLock,
+    RwLockReadGuard, RwLockWriteGuard,
+    MappedRwLockReadGuard as Read, MappedRwLockWriteGuard as Write
 };
 
 /// TODO: pin?
-type Weak<T> = WeakRc<RefCell<T>>;
+type Weak<T> = WeakArc<RwLock<T>>;
 
 /// A Tree of [`Node`]s.
 ///
@@ -22,7 +26,7 @@ type Weak<T> = WeakRc<RefCell<T>>;
 ///
 /// When a [`Node`] method *asks* for this type as argument, it means it is **taking ownership** of the [`Node`]s.
 /// 
-/// Although [`Node`]s use shared ownership though [`Reference Counting`](Rc), a [`Tree`] implies more explicitly that the specific [`Node`] is owned.
+/// Although [`Node`]s use shared ownership though [`Reference Counting`](Arc), a [`Tree`] implies more explicitly that the specific [`Node`] is owned.
 #[derive(Default, PartialEq, Eq)]
 pub struct Tree<T> {
     root: Node<T>,
@@ -44,7 +48,7 @@ impl<T> Tree<T> {
         IterBFS::new(self.root())
     }
     /// Iterate over all the [`Node`]s of the [`Tree`] using **Depth-First Search**.
-    /// /// Call [`IterDFS::new()`] to iterate from any arbitrary [`Node`].
+    /// Call [`IterDFS::new()`] to iterate from any arbitrary [`Node`].
     pub fn iter_dfs(&self) -> IterDFS<T> {
         IterDFS::new(self.root())
     }
@@ -90,7 +94,7 @@ impl<T: Debug> Debug for Tree<T> {
 
 /// Obtained by calling [`Node::debug_tree()`].
 pub struct DebugTree<'a, T: Debug> {
-    root: Ref<'a, InnerNode<T>>,
+    root: RwLockReadGuard<'a, InnerNode<T>>,
 }
 impl<'a, T: Debug> Debug for DebugTree<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
