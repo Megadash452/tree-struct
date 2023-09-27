@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 /// An [`Iterator`] over all the [`Node`]s of a [`Tree`] (or subtree) using a **Breadth-First Search** algorithm.
 ///
-/// Obtained by calling [`Tree::iter_bfs()`] or [`Self::new()`].
+/// Obtained by calling [`Tree::iter_bfs()`] or [`Node::iter_bfs()`].
 ///
 /// There is also [`IterDFS`], which uses *Depth-First search*, but **BFS** is usually *faster* in most scenarios.
 pub struct IterBFS<T> {
@@ -12,7 +12,7 @@ pub struct IterBFS<T> {
     queue: VecDeque<Node<T>>
 }
 impl<T> IterBFS<T> {
-    pub fn new(node: Node<T>) -> Self {
+    pub(crate) fn new(node: Node<T>) -> Self {
         let mut queue = VecDeque::new();
         // Step 1: Enqueue the root.
         queue.push_back(node);
@@ -35,7 +35,7 @@ impl<T> Iterator for IterBFS<T> {
 
 /// An [`Iterator`] over all the [`Node`]s of a [`Tree`] (or subtree) using a **non-recursive**, **Depth-First Search** algorithm.
 ///
-/// Obtained by calling [`Tree::iter_dfs()`] or [`Self::new()`].
+/// Obtained by calling [`Tree::iter_dfs()`] or [`Node::iter_dfs()`].
 ///
 /// You should most likely use [`IterBFS`], which uses *Breadth-First search*, becase it is usually *faster* in most scenarios.
 pub struct IterDFS<T> {
@@ -44,7 +44,7 @@ pub struct IterDFS<T> {
     stack: Vec<Node<T>>
 }
 impl<T> IterDFS<T> {
-    pub fn new(node: Node<T>) -> Self {
+    pub(crate) fn new(node: Node<T>) -> Self {
         // Step 1: Push the root.
         Self { stack: vec![node] }
     }

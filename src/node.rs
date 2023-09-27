@@ -249,6 +249,17 @@ impl<T> Node<T> {
         Some(Tree::from(root))
     }
 
+    #[inline]
+    /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Breadth-First Search**.
+    pub fn iter_bfs(&self) -> IterBFS<T> {
+        IterBFS::new(self.ref_clone())
+    }
+    #[inline]
+    /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Depth-First Search**.
+    pub fn iter_dfs(&self) -> IterDFS<T> {
+        IterDFS::new(self.ref_clone())
+    }
+
     /// Clones the [`Rc`] and increments the internal reference counter of this [`Node`].
     pub fn ref_clone(&self) -> Self {
         Self(Pin::clone(&self.0))

@@ -39,12 +39,10 @@ impl<T> Tree<T> {
     }
 
     /// Iterate over all the [`Node`]s of the [`Tree`] using **Breadth-First Search**.
-    /// Call [`IterBFS::new()`] to iterate from any arbitrary [`Node`].
     pub fn iter_bfs(&self) -> IterBFS<T> {
         IterBFS::new(self.root())
     }
     /// Iterate over all the [`Node`]s of the [`Tree`] using **Depth-First Search**.
-    /// /// Call [`IterDFS::new()`] to iterate from any arbitrary [`Node`].
     pub fn iter_dfs(&self) -> IterDFS<T> {
         IterDFS::new(self.root())
     }
