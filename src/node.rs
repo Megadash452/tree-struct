@@ -68,7 +68,7 @@ impl<T> NodeBuilder<T> {
         );
         
         // Can be pinned here because no other unpinned Rcs exist
-        Tree::from(Node(unsafe { Pin::new_unchecked(root) }))
+        Tree { root: Node(unsafe { Pin::new_unchecked(root) }) }
     }
     fn build_children(parent: Weak<InnerNode<T>>, children: Vec<Self>) -> Vec<Node<T>> {
         children.into_iter()
@@ -246,7 +246,7 @@ impl<T> Node<T> {
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
         let root = parent.children.remove(index);
         unsafe { root.borrow_mut().as_mut().get_unchecked_mut().parent = None };
-        Some(Tree::from(root))
+        Some(Tree { root })
     }
 
     #[inline]
@@ -289,7 +289,7 @@ impl<T: Clone> Node<T> {
         root.borrow_mut().children = self.clone_children_deep(Rc::downgrade(&root));
 
         // Can be pinned here because no other unpinned Rcs exist
-        Tree::from(Self(unsafe { Pin::new_unchecked(root) }))
+        Tree { root: Self(unsafe { Pin::new_unchecked(root) }) }
     }
     fn clone_children_deep(&self, parent: Weak<InnerNode<T>>) -> Vec<Self> {
         self.children()

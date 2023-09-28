@@ -16,6 +16,7 @@ use std::{
 type Weak<T> = WeakRc<RefCell<T>>;
 
 /// A Tree of [`Node`]s.
+/// The root of the Tree has *no parent*.
 ///
 /// ### Ownership
 /// When a [`Node`] method *returns* this type, it means it is **passing ownership** of the [`Node`]s.
@@ -64,12 +65,6 @@ impl<T> From<NodeBuilder<T>> for Tree<T> {
     #[inline]
     fn from(builder: NodeBuilder<T>) -> Self {
         builder.build()
-    }
-}
-impl<T> From<Node<T>> for Tree<T> {
-    #[inline]
-    fn from(root: Node<T>) -> Self {
-        Tree { root }
     }
 }
 impl<T: Clone> Clone for Tree<T> {
