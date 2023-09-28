@@ -68,8 +68,8 @@ impl<T> NodeBuilder<T> {
             self.children
         );
         
-        // Can be pinned here because no other unpinned Arcs exist
-        Tree::from(Node(unsafe { Pin::new_unchecked(root) }))
+        // Can be pinned here because no other unpinned Rcs exist
+        Tree { root: Node(unsafe { Pin::new_unchecked(root) }) }
     }
     fn build_children(parent: Weak<InnerNode<T>>, children: Vec<Self>) -> Vec<Node<T>> {
         children.into_iter()
@@ -250,7 +250,7 @@ impl<T> Node<T> {
 
         let root = parent.children.remove(index);
         unsafe { root.write().as_mut().get_unchecked_mut().parent = None };
-        Some(Tree::from(root))
+        Some(Tree { root })
     }
 
     
@@ -293,8 +293,8 @@ impl<T: Clone> Node<T> {
 
         root.write().children = self.clone_children_deep(Arc::downgrade(&root));
 
-        // Can be pinned here because no other unpinned Arcs exist
-        Tree::from(Self(unsafe { Pin::new_unchecked(root) }))
+        // Can be pinned here because no other unpinned Rcs exist
+        Tree { root: Self(unsafe { Pin::new_unchecked(root) }) }
     }
     fn clone_children_deep(&self, parent: Weak<InnerNode<T>>) -> Vec<Self> {
         self.children()
