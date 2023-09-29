@@ -80,7 +80,6 @@ impl<T> NodeBuilder<T> {
 
                 // Don't need to unlock for other threads because the Node hasn't been released and is not used while this lock is alive.
                 child_mut.parent = Some(Weak::clone(&parent));
-
                 child_mut.children = Self::build_children(
                     Arc::downgrade(&child),
                     builder.children
@@ -240,15 +239,13 @@ impl<T> Node<T> {
     /// If `self` has no **parent**, either because it is a *root* or it is not part of a [`Tree`], this will return [`None`].
     pub fn detach(&self) -> Option<Tree<T>> {
         let parent = self.parent()?;
-        let mut parent = parent.write();
-        let parent = unsafe { parent.as_mut().get_unchecked_mut() };
 
         // Find the index of **descendant** to remove it from its parent's children list
-        let index = parent.children.iter()
+        let index = parent.read().children.iter()
             .position(|child| self.is_same_as(child))
             .expect("Node is not found in its parent");
 
-        let root = parent.children.remove(index);
+        let root = unsafe { parent.write().as_mut().get_unchecked_mut() }.children.remove(index);
         unsafe { root.write().as_mut().get_unchecked_mut().parent = None };
         Some(Tree { root })
     }
@@ -291,6 +288,7 @@ impl<T: Clone> Node<T> {
         // Do not pin at first to be able to `Arc::downgrade()` freely.
         let root = Arc::new(RwLock::new(InnerNode::new(self.read().content.clone())));
 
+        // TODO: Use Arc::get_mut_unchecked() when it becomes stable
         root.write().children = self.clone_children_deep(Arc::downgrade(&root));
 
         // Can be pinned here because no other unpinned Rcs exist
@@ -302,17 +300,12 @@ impl<T: Clone> Node<T> {
             .map(|child| {
                 // Do not pin at first to be able to `Arc::downgrade()` freely.
                 let cloned = Arc::new(RwLock::new(InnerNode::new(child.read().content.clone())));
+                // TODO: Use Arc::get_mut_unchecked() when it becomes stable
                 let mut cloned_mut  = cloned.write();
 
-                // Assign the parent with the obtained lock
+                // Don't need to unlock for other threads because the Node hasn't been released and is not used while this lock is alive.
                 cloned_mut.parent = Some(Weak::clone(&parent));
-                // Unlock momentarily to let other threads aquire a lock while this thread clones the children of child.
-                RwLockWriteGuard::unlock_fair(cloned_mut);
-                let children = child.clone_children_deep(Arc::downgrade(&cloned));
-
-                // Lock again to assign the children.
-                cloned_mut = cloned.write();
-                cloned_mut.children = children;
+                cloned_mut.children = child.clone_children_deep(Arc::downgrade(&cloned));
 
                 drop(cloned_mut);
                 // Can be pinned here because no other unpinned Arcs exist
