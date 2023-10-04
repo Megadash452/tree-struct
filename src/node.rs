@@ -1,6 +1,6 @@
 use super::*;
 use ptrplus::AsPtr;
-use std::{ptr::NonNull, marker::PhantomPinned};
+use std::{marker::PhantomPinned, ptr::NonNull};
 
 /// Helper struct to build a [`Tree`] of [`Node`]s.
 ///
@@ -67,10 +67,8 @@ impl<T> NodeBuilder<T> {
             _pin: PhantomPinned,
         });
 
-        unsafe { root.as_mut().get_unchecked_mut() }.children = Self::build_children(
-            root.ptr(),
-            self.children
-        );
+        unsafe { root.as_mut().get_unchecked_mut() }.children =
+            Self::build_children(root.ptr(), self.children);
 
         Tree { root }
     }
@@ -85,10 +83,8 @@ impl<T> NodeBuilder<T> {
                     _pin: PhantomPinned,
                 });
 
-                unsafe { child.as_mut().get_unchecked_mut() }.children = Self::build_children(
-                    child.ptr(),
-                    builder.children
-                );
+                unsafe { child.as_mut().get_unchecked_mut() }.children =
+                    Self::build_children(child.ptr(), builder.children);
 
                 child
             })
@@ -98,18 +94,18 @@ impl<T> NodeBuilder<T> {
 
 /// A [`Node`] has 1 [`parent`](Self::parent()) and multiple [`children`](Self::children()).
 /// It also stores [`content`](Self::content) of type **`T`**.
-/// 
+///
 /// A Node is [`heap-allocated`](Box) and [`pinned`](Pin) to allow storing a reference to the parent (Node is a *self referential struct*)
 /// without the data of said parent being moved.
 /// The pointer to the parent must be valid for the lifetime of the Node that holds the pointer.
-/// 
+///
 /// Therefore, in theory, a *stack-allocated unpinned* Node should not exist, but that is ok as long as the Node has *no children*.
 /// The current implementation of the methods allows asserting that such Node has no children
 /// because [`adding children`](Self::append_child()) (i.e. using a *mutable Node*) requires it to be **[`Pin`]ned**.
 /// A user can still use [`std::pin::pin!`] on a *stack-allocated* Node and add children to it,
 /// but the Node *can't be moved*, and its children are dropped along with it,
 /// so the pointer it's children hold **remains valid for their lifetimes**.
-/// 
+///
 /// This allows the Node struct to implement traits that require returning a *stack-allocated* Node (e.g. [`Default`] and [`Clone`]).
 /// However, it is recommended to convert the returned [`Node`] into a [`Tree`] using `Tree::from()` or `Node::into()` as an "ez mode"
 /// for getting rid of compiler errors that are caused by trying to use `&mut Node` or trying to move it.
@@ -192,7 +188,7 @@ impl<T> Node<T> {
     pub fn insert_child(self: Pin<&mut Self>, mut child: Tree<T>, index: usize) {
         // Compiler ensures `self != child.root`.
         unsafe {
-            let this = self.get_unchecked_mut() ;
+            let this = self.get_unchecked_mut();
             child.root_mut().get_unchecked_mut().parent = Some(NonNull::new_unchecked(this));
             this.children.insert(index, child.root)
         }
@@ -211,7 +207,9 @@ impl<T> Node<T> {
         let parent = unsafe { descendant.as_ref().parent.unwrap().as_mut() };
 
         // Find the index of **descendant** to remove it from its parent's children list
-        let index = parent.children.iter()
+        let index = parent
+            .children
+            .iter()
             .position(|child| descendant.as_ptr() == child.ptr().as_ptr())
             .expect("Node is not found in its parent");
 
@@ -274,7 +272,7 @@ impl<T: Default> Default for Node<T> {
 impl<T: Clone> Clone for Node<T> {
     /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
     /// The resulting cloned [`Node`] will have no **parent** or **children**.
-    /// 
+    ///
     /// Converting the returned Node to a [`Tree`] is recommended.
     ///
     /// For a method that clones the [`Node`] *and* its subtree, see [`Node::clone_deep`].
@@ -295,7 +293,8 @@ impl<T: Clone> Node<T> {
     pub fn clone_deep(&self) -> Tree<T> {
         let mut root = Box::pin(self.clone());
 
-        unsafe { root.as_mut().get_unchecked_mut() }.children = self.clone_children_deep(root.ptr());
+        unsafe { root.as_mut().get_unchecked_mut() }.children =
+            self.clone_children_deep(root.ptr());
 
         Tree { root }
     }
@@ -324,7 +323,14 @@ impl<T: Debug> Debug for Node<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.content)
-            .field("children", &self.children().iter().map(|c| &c.content).collect::<Box<_>>())
+            .field(
+                "children",
+                &self
+                    .children()
+                    .iter()
+                    .map(|c| &c.content)
+                    .collect::<Box<_>>(),
+            )
             .finish()
     }
 }

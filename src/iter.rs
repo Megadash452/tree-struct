@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 pub struct IterBFS<'a, T> {
     /* Apparently a Vec would perform better than a LinkedList in this case.
     https://stackoverflow.com/questions/40848918/are-there-queue-and-stack-collections-in-rust */
-    queue: VecDeque<&'a Node<T>>
+    queue: VecDeque<&'a Node<T>>,
 }
 impl<'a, T> IterBFS<'a, T> {
     pub(crate) fn new(node: &'a Node<T>) -> Self {
@@ -41,7 +41,7 @@ impl<'a, T> Iterator for IterBFS<'a, T> {
 pub struct IterDFS<'a, T> {
     /* Apparently a Vec would perform better than a LinkedList in this case.
     https://stackoverflow.com/questions/40848918/are-there-queue-and-stack-collections-in-rust */
-    stack: Vec<&'a Node<T>>
+    stack: Vec<&'a Node<T>>,
 }
 impl<'a, T> IterDFS<'a, T> {
     pub(crate) fn new(node: &'a Node<T>) -> Self {
