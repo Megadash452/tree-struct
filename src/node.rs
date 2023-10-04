@@ -72,7 +72,7 @@ impl<T> NodeBuilder<T> {
             self.children
         );
 
-        Tree::from(root)
+        Tree { root }
     }
     fn build_children(parent: Parent<Node<T>>, children: Vec<Self>) -> Vec<Owned<Node<T>>> {
         children
@@ -96,6 +96,23 @@ impl<T> NodeBuilder<T> {
     }
 }
 
+/// A [`Node`] has 1 [`parent`](Self::parent()) and multiple [`children`](Self::children()).
+/// It also stores [`content`](Self::content) of type **`T`**.
+/// 
+/// A Node is [`heap-allocated`](Box) and [`pinned`](Pin) to allow storing a reference to the parent (Node is a *self referential struct*)
+/// without the data of said parent being moved.
+/// The pointer to the parent must be valid for the lifetime of the Node that holds the pointer.
+/// 
+/// Therefore, in theory, a *stack-allocated unpinned* Node should not exist, but that is ok as long as the Node has *no children*.
+/// The current implementation of the methods allows asserting that such Node has no children
+/// because [`adding children`](Self::append_child()) (i.e. using a *mutable Node*) requires it to be **[`Pin`]ned**.
+/// A user can still use [`std::pin::pin!`] on a *stack-allocated* Node and add children to it,
+/// but the Node *can't be moved*, and its children are dropped along with it,
+/// so the pointer it's children hold **remains valid for their lifetimes**.
+/// 
+/// This allows the Node struct to implement traits that require returning a *stack-allocated* Node (e.g. [`Default`] and [`Clone`]).
+/// However, it is recommended to convert the returned [`Node`] into a [`Tree`] using `Tree::from()` or `Node::into()` as an "ez mode"
+/// for getting rid of compiler errors that are caused by trying to use `&mut Node` or trying to move it.
 pub struct Node<T> {
     pub content: T,
     parent: Option<Parent<Self>>,
@@ -201,7 +218,7 @@ impl<T> Node<T> {
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
         let mut root = parent.children.remove(index);
         unsafe { root.as_mut().get_unchecked_mut() }.parent = None;
-        Some(Tree::from(root))
+        Some(Tree { root })
     }
 
     /// See [`crate::Tree::borrow_descendant()`].
@@ -236,15 +253,29 @@ impl<T> Node<T> {
     #[inline]
     /// Get a *[`NonNull`] pointer* for **self**, which should only be treated as a `*const Self`.
     /// Useful for [`Tree::detach_descendant`] and [`Tree::borrow_descendant`].
-    /// To get a *raw pointer* (*const Self) do `.ptr().as_ptr()`.
     pub fn ptr(&self) -> NonNull<Self> {
         NonNull::from(self)
+    }
+}
+
+impl<T: Default> Default for Node<T> {
+    /// Creates a Node with the Default content.
+    /// Converting the returned Node to a [`Tree`] is recommended.
+    fn default() -> Self {
+        Self {
+            content: T::default(),
+            parent: None,
+            children: vec![],
+            _pin: PhantomPinned,
+        }
     }
 }
 
 impl<T: Clone> Clone for Node<T> {
     /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
     /// The resulting cloned [`Node`] will have no **parent** or **children**.
+    /// 
+    /// Converting the returned Node to a [`Tree`] is recommended.
     ///
     /// For a method that clones the [`Node`] *and* its subtree, see [`Node::clone_deep`].
     fn clone(&self) -> Self {
@@ -266,7 +297,7 @@ impl<T: Clone> Node<T> {
 
         unsafe { root.as_mut().get_unchecked_mut() }.children = self.clone_children_deep(root.ptr());
 
-        Tree::from(root)
+        Tree { root }
     }
     fn clone_children_deep(&self, parent: Parent<Self>) -> Vec<Owned<Self>> {
         self.children
@@ -295,14 +326,6 @@ impl<T: Debug> Debug for Node<T> {
             .field("content", &self.content)
             .field("children", &self.children().iter().map(|c| &c.content).collect::<Box<_>>())
             .finish()
-    }
-}
-
-/// Can't implement the [`Default`] trait because a [`Node`] can't exist without being wrapped in a [`Pin`]ned pointer.
-impl<T: Default> Node<T> {
-    #[allow(clippy::should_implement_trait)]
-    pub fn default() -> Tree<T> {
-        NodeBuilder::default().build()
     }
 }
 

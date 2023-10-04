@@ -48,7 +48,7 @@ fn clone() {
     let target = &*root.children()[1]; // "child b"
 
     // Regular clone
-    let clone = Node::clone(target);
+    let clone = target.clone();
     assert!(!clone.is_same_as(target));
     assert_eq!(clone.content, target.content);
     assert!(clone.parent().is_none());

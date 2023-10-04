@@ -10,6 +10,7 @@ type Owned<T> = Pin<Box<T>>;
 type Parent<T> = NonNull<T>;
 
 /// A Tree of [`Node`]s.
+/// The root of the Tree has *no parent*.
 ///
 /// ### Ownership
 /// When a [`Node`] method *returns* this type, it means it is **passing ownership** of the [`Node`]s.
@@ -110,10 +111,9 @@ impl<T> From<NodeBuilder<T>> for Tree<T> {
         builder.build()
     }
 }
-impl<T> From<Owned<Node<T>>> for Tree<T> {
-    #[inline]
-    fn from(root: Owned<Node<T>>) -> Self {
-        Tree { root }
+impl<T: Default> Default for Tree<T> {
+    fn default() -> Self {
+        NodeBuilder::default().build()
     }
 }
 impl<T: Clone> Clone for Tree<T> {
@@ -128,11 +128,6 @@ impl<T: PartialEq> PartialEq for Tree<T> {
     }
 }
 impl<T: Eq> Eq for Tree<T> {}
-impl<T: Default> Default for Tree<T> {
-    fn default() -> Self {
-        NodeBuilder::default().build()
-    }
-}
 impl<T: Debug> Debug for Tree<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tree")
