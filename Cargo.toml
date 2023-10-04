@@ -1,11 +1,11 @@
 [package]
 name = "tree-struct"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 repository = "https://github.com/Megadash452/tree-struct"
 readme = "README.md"
 description = "A general-purpose Tree implementation in Rust"
-license-file = "LICENSE"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
