@@ -26,28 +26,28 @@ impl Tree {
         self.root.as_mut()
     }
 
-    /// Removes the **descendant** of the **root [`Node`]** from the [`Tree`], and returns the *detached [`Node`]* with ownership (aka a [`Tree`]).
-    ///
-    /// Returns [`None`] if it is not a **descendant** of the **root**, or **root** [`is_same_as`](Node::is_same_as()) **descendant**.
-    ///
-    /// This function can only be called from the **root [`Node`]**.
-    ///
-    /// **descendant** must be a *NonNull pointer* (obtained from [`Node::ptr`]) because, if it was a reference,
-    /// the borrow checker will consider the entire [`Tree`] to be *immutably borrowed* (including *self*).
-    /// The **descendant** pointer passed to this function will remain valid because it is [`Pin`]ned.
-    ///
-    /// # Example
-    /// ```
-    /// # use tree_struct::Node;
-    /// # let mut tree = Node::builder(0).child(Node::builder(1)).child(Node::builder(2)).build();
-    /// let target = tree.root().children()[1].ptr();
-    /// let detached = tree.detach_descendant(target).unwrap();
-    /// assert!(detached.root().is_same_as(target));
-    /// ```
-    #[inline]
-    pub fn detach_descendant(&mut self, descendant: NonNull<dyn Node>) -> Option<Self> {
-        self.root_mut().detach_descendant(descendant)
-    }
+    // /// Removes the **descendant** of the **root [`Node`]** from the [`Tree`], and returns the *detached [`Node`]* with ownership (aka a [`Tree`]).
+    // ///
+    // /// Returns [`None`] if it is not a **descendant** of the **root**, or **root** [`is_same_as`](Node::is_same_as()) **descendant**.
+    // ///
+    // /// This function can only be called from the **root [`Node`]**.
+    // ///
+    // /// **descendant** must be a *NonNull pointer* (obtained from [`Node::ptr`]) because, if it was a reference,
+    // /// the borrow checker will consider the entire [`Tree`] to be *immutably borrowed* (including *self*).
+    // /// The **descendant** pointer passed to this function will remain valid because it is [`Pin`]ned.
+    // ///
+    // /// # Example
+    // /// ```
+    // /// # use tree_struct::Node;
+    // /// # let mut tree = Node::builder(0).child(Node::builder(1)).child(Node::builder(2)).build();
+    // /// let target = tree.root().children()[1].ptr();
+    // /// let detached = tree.detach_descendant(target).unwrap();
+    // /// assert!(detached.root().is_same_as(target));
+    // /// ```
+    // #[inline]
+    // pub fn detach_descendant(&mut self, descendant: NonNull<dyn Node>) -> Option<Self> {
+    //     self.root_mut().detach_descendant(descendant)
+    // }
 
     /// Mutably borrows a **descendant** of the [`Tree`]'s **root [`Node`]** as `mutable`.
     /// See [Mutable Iterators section](self#iterators-for-mutable-nodes) for why obtaining a `&mut Node` was implemented this way.
@@ -99,24 +99,24 @@ impl<'a> IntoIterator for &'a Tree {
     }
 }
 
-impl From<NodeBuilder> for Tree {
-    #[inline]
-    fn from(builder: NodeBuilder) -> Self {
-        builder.build()
-    }
-}
+// impl From<NodeBuilder> for Tree {
+//     #[inline]
+//     fn from(builder: NodeBuilder) -> Self {
+//         builder.build()
+//     }
+// }
 impl From<Owned<dyn Node>> for Tree {
     #[inline]
     fn from(root: Owned<dyn Node>) -> Self {
         Tree { root }
     }
 }
-impl Clone for Tree {
-    /// Clones the entire [`Tree`] by calling [`Node::clone_deep()`] on the **root**.
-    fn clone(&self) -> Self {
-        self.root().clone_deep()
-    }
-}
+// impl Clone for Tree {
+//     /// Clones the entire [`Tree`] by calling [`Node::clone_deep()`] on the **root**.
+//     fn clone(&self) -> Self {
+//         self.root().clone_deep()
+//     }
+// }
 // impl PartialEq for Tree {
 //     fn eq(&self, other: &Self) -> bool {
 //         self.root().eq(other.root())
@@ -136,15 +136,15 @@ impl Clone for Tree {
 //     }
 // }
 
-// /// Obtained by calling [`Node::debug_tree()`].
-// pub struct DebugTree<'a> {
-//     root: &'a dyn Node,
-// }
-// impl<'a> Debug for DebugTree<'a> {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         f.debug_struct("Node")
-//             .field("content", &self.root.content)
-//             .field("children", &self.root.children().iter().map(|c| c.debug_tree()).collect::<Box<_>>())
-//             .finish()
-//     }
-// }
+/// Obtained by calling [`Node::debug_tree()`].
+pub struct DebugTree<'a> {
+    root: &'a dyn Node,
+}
+impl<'a> Debug for DebugTree<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("content", &self.root.debug_content())
+            .field("children", &self.root.children().iter().map(|c| c.debug_tree()).collect::<Box<_>>())
+            .finish()
+    }
+}
