@@ -1,4 +1,4 @@
-use tree_struct::{BaseNode as Node, Node as _};
+use tree_struct::BaseNode as Node;
 
 #[test]
 fn breadth_first() {
@@ -21,7 +21,7 @@ fn breadth_first() {
         .build();
 
     assert_eq!(
-        tree.iter_bfs().map(|n| n.as_any().downcast_ref::<Node<char>>().unwrap().content).collect::<Vec<_>>(),
+        tree.iter_bfs().map(|n| n.downcast_ref::<Node<char>>().unwrap().content).collect::<Vec<_>>(),
         vec!['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o']
     );
 }
@@ -47,7 +47,7 @@ fn depth_first() {
         .build();
 
     assert_eq!(
-        tree.iter_dfs().map(|n| n.as_any().downcast_ref::<Node<char>>().unwrap().content).collect::<Vec<_>>(),
+        tree.iter_dfs().map(|n| n.downcast_ref::<Node<char>>().unwrap().content).collect::<Vec<_>>(),
         vec!['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o']
     );
 }

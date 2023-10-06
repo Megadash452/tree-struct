@@ -2,87 +2,85 @@ use tree_struct::{BaseNode as Node, Node as _};
 
 #[test]
 fn siblings() {
-    let root = Node::builder("parent")
+    let tree = Node::builder("parent")
         .child(Node::builder("child a"))
         .child(Node::builder("child b"))
         .child(Node::builder("child c"))
         .build();
 
     // Siblings of "child a"
-    let target = root.children()[0];
+    let target = tree.root().children()[0];
     assert!(target.prev_sibling().is_none());
     assert_eq!(
-        Node::builder("child b").build().as_ref().get_ref(),
-        target.next_sibling().unwrap()
+        target.next_sibling().unwrap(),
+        Node::builder("child b").build().root()
     );
     // Siblings of "child b"
-    let target = root.children()[1];
+    let target = tree.root().children()[1];
     assert_eq!(
-        Node::builder("child a").build().as_ref().get_ref(),
-        target.prev_sibling().unwrap()
+        target.prev_sibling().unwrap(),
+        Node::builder("child a").build().root()
     );
     assert_eq!(
-        Node::builder("child c").build().as_ref().get_ref(),
-        target.next_sibling().unwrap()
+        target.next_sibling().unwrap(),
+        Node::builder("child c").build().root()
     );
     // Siblings of "child c"
-    let target = root.children()[2];
+    let target = tree.root().children()[2];
     assert_eq!(
-        Node::builder("child b").build().as_ref().get_ref(),
-        target.prev_sibling().unwrap()
+        target.prev_sibling().unwrap(),
+        Node::builder("child b").build().root()
     );
     assert!(target.next_sibling().is_none());
 }
 
 #[test]
 fn clone() {
-    let root = Node::builder("parent")
+    let tree = Node::builder("parent")
         .child(Node::builder("child a"))
         .child(Node::builder("child b")
             .child(Node::builder("child d")))
         .child(Node::builder("child c"))
         .build();
 
-    let target = root.children()[1].as_any().downcast_ref::<Node<&str>>().unwrap(); // "child b"
+    let target = tree.root().children()[1].downcast_ref::<Node<&str>>().unwrap(); // "child b"
 
     // Regular clone
     let clone = target.clone();
     assert!(!clone.is_same_as(target));
-    assert_eq!(
-        clone.as_any().downcast_ref::<Node<&str>>().unwrap(),
-        target
-    );
+    assert_eq!(&clone, target);
     assert!(clone.parent().is_none());
     assert!(clone.children().is_empty());
 
     // Deep clone
     let clone = target.clone_deep();
+    let clone = clone.root();
     assert!(!clone.is_same_as(target));
-    assert_eq!(clone.as_ref().get_ref(), target);
+    assert_eq!(clone, target);
     assert!(clone.parent().is_none());
 }
 
 #[test]
 fn detach() {
-    let mut root = Node::builder("parent")
+    let mut tree = Node::builder("parent")
         .child(Node::builder("child a")
             .child(Node::builder("child d")))
         .child(Node::builder("child b"))
         .child(Node::builder("child c"))
         .build();
 
-    let target = root.children()[2].ptr();
-    let detached = root.as_mut().detach_descendant(target).unwrap();
-    assert!(detached.is_same_as(target.as_ptr()));
+    let target = tree.root().children()[2].ptr();
+    let detached = tree.detach_descendant(target).unwrap();
+    assert!(detached.root().is_same_as(target.as_ptr()));
     assert_eq!(detached, Node::builder("child c").build());
 
-    let target = root.children()[0].children()[0].ptr();
-    let detached = root.as_mut().detach_descendant(target).unwrap();
-    assert!(detached.is_same_as(target.as_ptr()));
+    let target = tree.root().children()[0].children()[0].ptr();
+    let detached = tree.detach_descendant(target).unwrap();
+    assert!(detached.root().is_same_as(target.as_ptr()));
     assert_eq!(detached, Node::builder("child d").build());
 
     assert_eq!(
-        root,
+        tree,
         Node::builder("parent")
             .child(Node::builder("child a"))
             .child(Node::builder("child b"))
@@ -92,7 +90,7 @@ fn detach() {
 
 #[test]
 fn append_child() {
-    let mut root = Node::builder("parent")
+    let mut tree = Node::builder("parent")
         .child(Node::builder("child a"))
         .child(Node::builder("child b")
             .child(Node::builder("child d")))
@@ -101,30 +99,34 @@ fn append_child() {
 
     // -- Append a new node.
     let new = Node::builder("child e").build();
-    root.as_mut().append_child(new);
-    assert_eq!(root.children().last().unwrap().as_any().downcast_ref::<Node<&str>>().unwrap().content, "child e");
+    tree.root_mut().append_child(new);
+    assert_eq!(tree.root().children().last().unwrap().downcast_ref::<Node<&str>>().unwrap().content, "child e");
 
     // -- Append a node that was already in the tree.
-    let target = root.children()[1].children()[0].ptr();
-    let detached = root.as_mut().detach_descendant(target).unwrap();
-    root.as_mut().append_child(detached);
-    assert!(root.children().last().unwrap().is_same_as(target.as_ptr()));
-    assert_eq!(root.children().last().unwrap().as_any().downcast_ref::<Node<&str>>().unwrap().content, "child d");
-    assert!(root.children()[1].children().is_empty());
+    let target = tree.root().children()[1].children()[0].ptr();
+    let detached = tree.detach_descendant(target).unwrap();
+    tree.root_mut().append_child(detached);
+    assert!(tree.root().children().last().unwrap().is_same_as(target.as_ptr()));
+    // TODO: Compile error, but dereferencing overflows the stack???
+    // assert_eq!(
+    //     *tree.root().children().last().unwrap(),
+    //     Node::<&'static str>::builder("child d").build().root()
+    // );
+    assert!(tree.root().children()[1].children().is_empty());
 
     // -- Append a node from another tree.
-    let mut other_root = Node::builder("other parent")
+    let mut other_tree = Node::builder("other parent")
         .child(Node::builder("other child a"))
         .build();
 
-    let target = other_root.children()[0].ptr();
-    root.as_mut().append_child(other_root.as_mut().detach_descendant(target).unwrap());
-    assert!(root.children().last().unwrap().is_same_as(target.as_ptr()));
-    assert!(other_root.children().is_empty());
+    let target = other_tree.root().children()[0].ptr();
+    tree.root_mut().append_child(other_tree.detach_descendant(target).unwrap());
+    assert!(tree.root().children().last().unwrap().is_same_as(target.as_ptr()));
+    assert!(other_tree.root().children().is_empty());
 
     // -- End
     assert_eq!(
-        root,
+        tree,
         Node::builder("parent")
             .child(Node::builder("child a"))
             .child(Node::builder("child b"))
@@ -136,22 +138,22 @@ fn append_child() {
     );
 }
 
-// #[test]
-// fn dangling() {
-//     let mut root = Node::builder("parent")
-//         .child(Node::builder("child")
-//             .child(Node::builder("grandchild")))
-//         .build();
+#[test]
+fn dangling() {
+    let mut tree = Node::builder("parent")
+        .child(Node::builder("child")
+            .child(Node::builder("grandchild")))
+        .build();
 
-//     // These will be dangling ptrs
-//     let child = root.children()[0].ptr();
-//     let grandchild = unsafe { child.as_ref().children()[0].ptr() };
+    // These will be dangling ptrs
+    let child = tree.root().children()[0].ptr();
+    let grandchild = unsafe { child.as_ref().children()[0].ptr() };
 
-//     drop(root.detach_descendant(child));
+    drop(tree.detach_descendant(child));
 
-//     // All methods taking a ptr should return None when the ptr is dangling.
-//     assert_eq!(root.detach_descendant(child), None);
-//     assert_eq!(root.borrow_descendant(child), None);
-//     assert_eq!(root.detach_descendant(grandchild), None);
-//     assert_eq!(root.borrow_descendant(grandchild), None);
-// }
+    // All methods taking a ptr should return None when the ptr is dangling.
+    assert_eq!(tree.detach_descendant(child), None);
+    assert_eq!(tree.borrow_descendant(child), None);
+    assert_eq!(tree.detach_descendant(grandchild), None);
+    assert_eq!(tree.borrow_descendant(grandchild), None);
+}
