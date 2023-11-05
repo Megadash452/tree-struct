@@ -12,6 +12,15 @@ Nodes can be **mutably borrowed** with from their tree with `Tree::borrow_descen
 then you can change the **content** of the Node, or **append children**.
 Nodes can also be **detached** from the Tree with `Tree::detach_descendant`, but that does *not* require a *mutable reference* to the Node.
 
+## Reference Counted
+
+This Tree implementation uses Rust's *lifetimes* when dealing with Nodes.
+Using *reference counted* Nodes eleiminates the need of using the borrow checker, but the program will have less performance.
+
+To use the *reference counted* version, enable the `"rc"` feature when adding the package with `cargo add tree-struct --features rc`
+or including `features = ["rc"]` in the dependency import in *Cargo.toml*.
+Then use imports from the `rc` module instead of the root module.
+
 ## Iterators
 
 You can iterate over all the Nodes of a Tree or a subtree (borrowed Node) using **Breadth-first** or **Depth-first Search** algorithms.

@@ -1,6 +1,8 @@
 #![doc = include_str!("../README.md")]
 mod iter;
 mod node;
+#[cfg(feature = "rc")]
+pub mod rc;
 
 pub use iter::{IterBFS, IterDFS};
 pub use node::{Node, NodeBuilder};

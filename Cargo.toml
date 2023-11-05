@@ -11,3 +11,6 @@ license = "MIT"
 
 [dependencies]
 ptrplus = { version = "2.1.0", default-features = false }
+
+[features]
+rc = []
