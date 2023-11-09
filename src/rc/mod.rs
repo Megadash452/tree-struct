@@ -5,14 +5,25 @@ mod node;
 pub use iter::{IterBFS, IterDFS};
 pub use node::{Node, NodeBuilder};
 use node::InnerNode;
-use std::{
-    fmt::Debug,
-    pin::Pin,
-    rc::{Rc, Weak as WeakRc},
-    cell::{RefCell, Ref, RefMut},
-};
-
-type Weak<T> = WeakRc<RefCell<T>>;
+use std::fmt::Debug;
+use cfg_if::cfg_if;
+cfg_if! {
+    if #[cfg(feature = "arc")] {
+        use std::sync::{Arc as Rc, Weak as WeakRc};
+        use parking_lot::{
+            RwLock,
+            RwLockReadGuard as ReadLock, RwLockWriteGuard as WriteLock,
+            MappedRwLockReadGuard as ContentReadLock, MappedRwLockWriteGuard as ContentWriteLock
+        };
+    } else if #[cfg(feature = "rc")] {
+        use std::{
+            rc::{Rc, Weak as WeakRc},
+            cell::{RefCell as RwLock, Ref as ReadLock, RefMut as WriteLock},
+            // Must have separate type (names) for referencing a Node borrow and one that derives from a Node borrow (see parking_lot import above).
+            cell::{Ref as ContentReadLock, RefMut as ContentWriteLock }
+        };
+    }
+}
 
 /// A Tree of [`Node`]s.
 /// The root of the Tree has *no parent*.
@@ -82,7 +93,7 @@ impl<T: Debug> Debug for Tree<T> {
 
 /// Obtained by calling [`Node::debug_tree()`].
 pub struct DebugTree<'a, T: Debug> {
-    root: Ref<'a, InnerNode<T>>,
+    root: ReadLock<'a, InnerNode<T>>,
 }
 impl<'a, T: Debug> Debug for DebugTree<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

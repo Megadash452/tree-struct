@@ -128,7 +128,7 @@ impl<T> Node<T> {
         self.parent.map(|p| unsafe { p.as_ref() })
     }
     /// Holds references to each **child**.
-    /// /// To get a *mutable reference* to one of the **children**,
+    /// To get a *mutable reference* to one of the **children**,
     /// call [`crate::Tree::borrow_descendant()`] from the owner [`Tree`] with `self.parent().ptr()`.
     pub fn children(&self) -> Box<[&Self]> {
         self.children

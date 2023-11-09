@@ -135,4 +135,9 @@ fn append_child() {
     );
 }
 
+#[test]
+fn reference_count() {
+    todo!()
+}
+
 // Doesn't need Dangling test. No Nodes can dangle because user can't (shouldn't) get a raw pointer to a Node.

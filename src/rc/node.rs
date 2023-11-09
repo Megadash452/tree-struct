@@ -1,5 +1,33 @@
 use super::*;
-use std::marker::PhantomPinned;
+use std::{
+    pin::Pin,
+    marker::PhantomPinned,
+};
+
+type Weak<T> = WeakRc<RwLock<T>>;
+
+// Helper functions that allow writing the same code between RefCell and RwLock.
+// Resulting types for *read* are `impl Deref<Target = T>` and for *write* the DerefMut variant.
+#[inline]
+fn borrow<T>(this: &RwLock<T>) -> ReadLock<T> {
+    cfg_if! {
+        if #[cfg(feature = "arc")] {
+            this.read()
+        } else if #[cfg(feature = "rc")] {
+            this.borrow()
+        }
+    }
+}
+#[inline]
+fn borrow_mut<T>(this: &RwLock<T>) -> WriteLock<T> {
+    cfg_if! {
+        if #[cfg(feature = "arc")] {
+            this.write()
+        } else if #[cfg(feature = "rc")] {
+            this.borrow_mut()
+        }
+    }
+}
 
 /// Helper struct to build a [`Tree`] of [`Node`]s.
 ///
@@ -60,9 +88,9 @@ impl<T> NodeBuilder<T> {
     /// The children will be made into [`Pin`]ned [`Node`]s with the proper **parent**.
     pub fn build(self) -> Tree<T> {
         // Do not pin at first to be able to `Rc::downgrade()` freely.
-        let root = Rc::new(RefCell::new(InnerNode::new(self.content)));
+        let root = Rc::new(RwLock::new(InnerNode::new(self.content)));
     
-        root.borrow_mut().children = Self::build_children(
+        borrow_mut(&root).children = Self::build_children(
             Rc::downgrade(&root),
             self.children
         );
@@ -74,13 +102,16 @@ impl<T> NodeBuilder<T> {
         children.into_iter()
             .map(|builder| {
                 // Do not pin at first to be able to `Rc::downgrade()` freely.
-                let child = Rc::new(RefCell::new(InnerNode::new(builder.content)));
-                child.borrow_mut().parent = Some(Weak::clone(&parent));
+                let child = Rc::new(RwLock::new(InnerNode::new(builder.content)));
+                let mut child_mut = borrow_mut(&child);
 
-                child.borrow_mut().children = Self::build_children(
+                // When using RwLock: Don't need to unlock for other threads because the Node hasn't been released and is not used while this lock is alive.
+                child_mut.parent = Some(Weak::clone(&parent));
+                child_mut.children = Self::build_children(
                     Rc::downgrade(&child),
                     builder.children
                 );
+                drop(child_mut);
 
                 // Can be pinned here because no other unpinned Rcs exist
                 Node(unsafe { Pin::new_unchecked(child) })
@@ -133,7 +164,7 @@ impl<T: Debug> Debug for InnerNode<T> {
             .field("children", &self
                 .children
                 .iter()
-                .map(|c| Ref::map(c.borrow(), |c| &c.content))
+                .map(|c| ReadLock::map(c.borrow(), |c| &c.content))
                 .collect::<Box<_>>()
             )
             .finish()
@@ -147,20 +178,22 @@ impl<T: PartialEq> PartialEq for InnerNode<T> {
 impl<T: Eq> Eq for InnerNode<T> {}
 
 
-/// The outward-facing Node is the node struct wrapped in a [`cell`](RefCell) and [`reference counted pointer`](Rc).
+/// The outward-facing Node is the node struct wrapped in a [`cell`](RefCell) (or [`RwLock`]) and `reference counted pointer` ([`Rc`] or [`Arc`]).
 /// 
 /// A [`Node`] has 1 [`parent`](Self::parent()) and multiple [`children`](Self::children()).
 /// It also stores [`content`](Self::content()) of type **`T`**.
-pub struct Node<T>(Pin<Rc<RefCell<InnerNode<T>>>>);
+pub struct Node<T>(Pin<Rc<RwLock<InnerNode<T>>>>);
 impl<T> Node<T> {
     #[inline]
-    fn borrow(&self) -> Ref<InnerNode<T>> {
-        self.0.borrow()
+    fn borrow(&self) -> ReadLock<InnerNode<T>> {
+        borrow(&self.0)
     }
-    fn borrow_mut(&self) -> Pin<RefMut<InnerNode<T>>> {
-        unsafe { Pin::new_unchecked(self.0.borrow_mut()) }
+    fn borrow_mut(&self) -> Pin<WriteLock<InnerNode<T>>> {
+        unsafe { Pin::new_unchecked(borrow_mut(&self.0)) }
     }
-    fn downgrade(&self) -> Weak<InnerNode<T>> {
+
+    /// Must be immediately made into [`Self`] when upgraded.
+    unsafe fn downgrade(&self) -> Weak<InnerNode<T>> {
         // Casting Pin<P> to P is ok as long as nothing is moved later
         unsafe { Rc::downgrade(&*(&self.0 as *const _ as *const Rc<_>)) }
     }
@@ -170,6 +203,8 @@ impl<T> Node<T> {
         iter.find(|sib| self.is_same_as(sib));
         iter.next().map(Node::ref_clone)
     }
+
+    // vvv Public Functions vvv
 
     #[inline]
     pub fn builder(content: T) -> NodeBuilder<T> {
@@ -192,11 +227,11 @@ impl<T> Node<T> {
             .map(|c| c.ref_clone())
             .collect()
     }
-    pub fn content(&self) -> Ref<T> {
-        Ref::map(self.borrow(), |n| &n.content)
+    pub fn content(&self) -> ContentReadLock<T> {
+        ReadLock::map(self.borrow(), |n| &n.content)
     }
-    pub fn content_mut(&self) -> RefMut<T> {
-        RefMut::map(unsafe { Pin::into_inner_unchecked(self.borrow_mut()) }, |n| &mut n.content)
+    pub fn content_mut(&self) -> ContentWriteLock<T> {
+        WriteLock::map(unsafe { Pin::into_inner_unchecked(self.borrow_mut()) }, |n| &mut n.content)
     }
 
     /// Returns the [`Node`] immediately following this one in the **parent**'s [`children`](Node::children).
@@ -235,16 +270,14 @@ impl<T> Node<T> {
     /// If `self` has no **parent**, either because it is a *root* or it is not part of a [`Tree`], this will return [`None`].
     pub fn detach(&self) -> Option<Tree<T>> {
         let parent = self.parent()?;
-        let mut parent = parent.borrow_mut();
-        let parent = unsafe { parent.as_mut().get_unchecked_mut() };
 
         // Find the index of **descendant** to remove it from its parent's children list
-        let index = parent.children.iter()
+        let index = parent.borrow().children.iter()
             .position(|child| self.is_same_as(child))
             .expect("Node is not found in its parent");
 
         // If children is not UnsafeCell, use std::mem::transmute(parent.children.remove(index)).
-        let root = parent.children.remove(index);
+        let root = unsafe { parent.borrow_mut().as_mut().get_unchecked_mut() }.children.remove(index);
         unsafe { root.borrow_mut().as_mut().get_unchecked_mut().parent = None };
         Some(Tree { root })
     }
@@ -269,7 +302,7 @@ impl<T> Node<T> {
     /// Whether two [`Node`]s are the same (that is, they reference the same object).
     pub fn is_same_as(&self, other: &Self) -> bool {
         unsafe {
-            Rc::<RefCell<InnerNode<T>>>::ptr_eq(
+            Rc::<RwLock<InnerNode<T>>>::ptr_eq(
                 // Casting Pin<P> to P is ok as long as nothing is moved later
                 &*(&self.0 as *const _ as *const Rc<_>),
                 &*(&other.0 as *const _ as *const Rc<_>)
@@ -284,9 +317,10 @@ impl<T: Clone> Node<T> {
     /// For a method that clones the [`Node`] but *not* its subtree, see [`Node::clone`].
     pub fn clone_deep(&self) -> Tree<T> {
         // Do not pin at first to be able to `Rc::downgrade()` freely.
-        let root = Rc::new(RefCell::new(InnerNode::new(self.borrow().content.clone())));
+        let root = Rc::new(RwLock::new(InnerNode::new(self.borrow().content.clone())));
 
-        root.borrow_mut().children = self.clone_children_deep(Rc::downgrade(&root));
+        // TODO: Use Arc::get_mut_unchecked() (when it becomes stable) folowed by RwLock::get_mut.
+        borrow_mut(&root).children = self.clone_children_deep(Rc::downgrade(&root));
 
         // Can be pinned here because no other unpinned Rcs exist
         Tree { root: Self(unsafe { Pin::new_unchecked(root) }) }
@@ -296,9 +330,15 @@ impl<T: Clone> Node<T> {
             .iter()
             .map(|child| {
                 // Do not pin at first to be able to `Rc::downgrade()` freely.
-                let cloned = Rc::new(RefCell::new(InnerNode::new(child.borrow().content.clone())));
-                cloned.borrow_mut().parent = Some(Weak::clone(&parent));
-                cloned.borrow_mut().children = child.clone_children_deep(Rc::downgrade(&cloned));
+                let cloned = Rc::new(RwLock::new(InnerNode::new(child.borrow().content.clone())));
+                // TODO: Use Arc::get_mut_unchecked() (when it becomes stable) folowed by RwLock::get_mut.
+                let mut cloned_mut  = borrow_mut(&cloned);
+
+                // When using RwLock: Don't need to unlock for other threads because the Node hasn't been released and is not used while this lock is alive.
+                cloned_mut.parent = Some(Weak::clone(&parent));
+                cloned_mut.children = child.clone_children_deep(Rc::downgrade(&cloned));
+                drop(cloned_mut);
+
                 // Can be pinned here because no other unpinned Rcs exist
                 Self(unsafe { Pin::new_unchecked(cloned) })
             })
@@ -319,22 +359,22 @@ impl<T: Clone> Clone for Node<T> {
     ///
     /// For a method that clones the [`Node`] *and* its subtree, see [`Node::clone_deep`].
     fn clone(&self) -> Self {
-        Self(Rc::pin(RefCell::new(InnerNode::new(self.borrow().content.clone()))))
+        Self(Rc::pin(RwLock::new(InnerNode::new(self.borrow().content.clone()))))
     }
 }
 impl<T: Default> Default for Node<T> {
     fn default() -> Self {
-        Self(Rc::pin(RefCell::new(InnerNode::default())))
+        Self(Rc::pin(RwLock::new(InnerNode::default())))
     }
 }
 impl<T: PartialEq> PartialEq for Node<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.borrow().eq(&*other.0.borrow())
+        self.borrow().eq(&*other.borrow())
     }
 }
 impl<T: Eq> Eq for Node<T> {}
 impl<T: Debug> Debug for Node<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.0.borrow(), f)
+        Debug::fmt(&self.borrow(), f)
     }
 }
