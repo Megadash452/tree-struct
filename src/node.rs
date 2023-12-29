@@ -158,9 +158,9 @@ impl dyn Node {
     }
 }
 impl<T> PartialEq<T> for dyn Node
-where T: PartialEq {
+where T: PartialEq<Self> + Debug{
     fn eq(&self, other: &T) -> bool {
-        self == other
+        other.eq(self)
     }
 } 
 impl_downcast!(Node);
