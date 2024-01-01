@@ -255,37 +255,8 @@ impl<T> Node<T> {
         NonNull::from(self)
     }
 }
-
-impl<T: Default> Default for Node<T> {
-    /// Creates a Node with the Default content.
-    /// Converting the returned Node to a [`Tree`] is recommended.
-    fn default() -> Self {
-        Self {
-            content: T::default(),
-            parent: None,
-            children: vec![],
-            _pin: PhantomPinned,
-        }
-    }
-}
-
-impl<T: Clone> Clone for Node<T> {
-    /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
-    /// The resulting cloned [`Node`] will have no **parent** or **children**.
-    ///
-    /// Converting the returned Node to a [`Tree`] is recommended.
-    ///
-    /// For a method that clones the [`Node`] *and* its subtree, see [`Node::clone_deep`].
-    fn clone(&self) -> Self {
-        Self {
-            content: self.content.clone(),
-            parent: None,
-            children: vec![],
-            _pin: PhantomPinned,
-        }
-    }
-}
-impl<T: Clone> Node<T> {
+impl<T> Node<T>
+where T: Clone {
     /// Copies the [`Node`]'s [`content`](Node::content) and its [`children`](Node::children) recursively.
     /// The resulting cloned [`Node`] will have no **parent**.
     ///
@@ -311,15 +282,55 @@ impl<T: Clone> Node<T> {
             .collect()
     }
 }
-
-impl<T: Debug> Node<T> {
+impl<T> Node<T>
+where T: Debug {
     /// [`Debug`] the entire subtree (`self` and its **children**).
     #[inline]
     pub fn debug_tree(&self) -> DebugTree<T> {
         DebugTree { root: self }
     }
 }
-impl<T: Debug> Debug for Node<T> {
+
+impl<T> Default for Node<T>
+where T: Default {
+    /// Creates a Node with the Default content.
+    /// Converting the returned Node to a [`Tree`] is recommended.
+    fn default() -> Self {
+        Self {
+            content: T::default(),
+            parent: None,
+            children: vec![],
+            _pin: PhantomPinned,
+        }
+    }
+}
+impl<T> Clone for Node<T>
+where T: Clone {
+    /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
+    /// The resulting cloned [`Node`] will have no **parent** or **children**.
+    ///
+    /// Converting the returned Node to a [`Tree`] is recommended.
+    ///
+    /// For a method that clones the [`Node`] *and* its subtree, see [`Node::clone_deep`].
+    fn clone(&self) -> Self {
+        Self {
+            content: self.content.clone(),
+            parent: None,
+            children: vec![],
+            _pin: PhantomPinned,
+        }
+    }
+}
+impl<T> PartialEq for Node<T>
+where T: PartialEq {
+    fn eq(&self, other: &Self) -> bool {
+        self.content == other.content
+    }
+}
+impl<T> Eq for Node<T>
+where T: Eq {}
+impl<T> Debug for Node<T>
+where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.content)
@@ -334,10 +345,3 @@ impl<T: Debug> Debug for Node<T> {
             .finish()
     }
 }
-
-impl<T: PartialEq> PartialEq for Node<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.content == other.content
-    }
-}
-impl<T: Eq> Eq for Node<T> {}

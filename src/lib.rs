@@ -113,24 +113,29 @@ impl<T> From<NodeBuilder<T>> for Tree<T> {
         builder.build()
     }
 }
-impl<T: Default> Default for Tree<T> {
+impl<T> Default for Tree<T>
+where T: Default {
     fn default() -> Self {
         NodeBuilder::default().build()
     }
 }
-impl<T: Clone> Clone for Tree<T> {
+impl<T> Clone for Tree<T>
+where T: Clone {
     /// Clones the entire [`Tree`] by calling [`Node::clone_deep()`] on the **root**.
     fn clone(&self) -> Self {
         self.root().clone_deep()
     }
 }
-impl<T: PartialEq> PartialEq for Tree<T> {
+impl<T> PartialEq for Tree<T>
+where T: PartialEq {
     fn eq(&self, other: &Self) -> bool {
         self.root().eq(other.root())
     }
 }
-impl<T: Eq> Eq for Tree<T> {}
-impl<T: Debug> Debug for Tree<T> {
+impl<T> Eq for Tree<T>
+where T: Eq {}
+impl<T> Debug for Tree<T>
+where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tree")
             .field("root", &self.root().debug_tree())
@@ -139,10 +144,12 @@ impl<T: Debug> Debug for Tree<T> {
 }
 
 /// Obtained by calling [`Node::debug_tree()`].
-pub struct DebugTree<'a, T: Debug> {
+pub struct DebugTree<'a, T>
+where T: Debug {
     root: &'a Node<T>,
 }
-impl<'a, T: Debug> Debug for DebugTree<'a, T> {
+impl<'a, T> Debug for DebugTree<'a, T>
+where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.root.content)

@@ -121,7 +121,7 @@ impl<T> NodeBuilder<T> {
 }
 
 #[derive(Default)]
-pub struct InnerNode<T> {
+pub(super) struct InnerNode<T> {
     pub content: T,
     parent: Option<Weak<Self>>,
     pub(super) children: Vec<Node<T>>,
@@ -157,7 +157,8 @@ impl<T> InnerNode<T> {
     //     false
     // }
 }
-impl<T: Debug> Debug for InnerNode<T> {
+impl<T> Debug for InnerNode<T>
+where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("content", &self.content)
@@ -170,15 +171,17 @@ impl<T: Debug> Debug for InnerNode<T> {
             .finish()
     }
 }
-impl<T: PartialEq> PartialEq for InnerNode<T> {
+impl<T> PartialEq for InnerNode<T>
+where T: PartialEq {
     fn eq(&self, other: &Self) -> bool {
         self.content == other.content
     }
 }
-impl<T: Eq> Eq for InnerNode<T> {}
+impl<T> Eq for InnerNode<T>
+where T: Eq {}
 
 
-/// The outward-facing Node is the node struct wrapped in a [`cell`](RefCell) (or [`RwLock`]) and `reference counted pointer` ([`Rc`] or [`Arc`]).
+/// The outward-facing Node is the node struct wrapped in a [`cell`](std::cell::RefCell) (or [`RwLock`]) and `reference counted pointer` ([`Rc`](std::rc::Rc) or [`Arc`](std::sync::Arc)).
 /// 
 /// A [`Node`] has 1 [`parent`](Self::parent()) and multiple [`children`](Self::children()).
 /// It also stores [`content`](Self::content()) of type **`T`**.
@@ -310,7 +313,8 @@ impl<T> Node<T> {
         }
     }
 }
-impl<T: Clone> Node<T> {
+impl<T> Node<T>
+where T: Clone {
     /// Copies the [`Node`]'s [`content`](Node::content) and its [`children`](Node::children) recursively.
     /// The resulting cloned [`Node`] will have no **parent**.
     ///
@@ -345,7 +349,8 @@ impl<T: Clone> Node<T> {
             .collect()
     }
 }
-impl<T: Debug> Node<T> {
+impl<T> Node<T>
+where T: Debug {
     /// [`Debug`] the entire subtree (`self` and its **children**).
     #[inline]
     pub fn debug_tree(&self) -> DebugTree<T> {
@@ -353,7 +358,14 @@ impl<T: Debug> Node<T> {
     }
 }
 
-impl<T: Clone> Clone for Node<T> {
+impl<T> Default for Node<T>
+where T: Default {
+    fn default() -> Self {
+        Self(Rc::pin(RwLock::new(InnerNode::default())))
+    }
+}
+impl<T> Clone for Node<T>
+where T: Clone {
     /// Copies the [`Node`]'s [`content`](Node::content), but not its [`children`](Node::children).
     /// The resulting cloned [`Node`] will have no **parent** or **children**.
     ///
@@ -362,18 +374,16 @@ impl<T: Clone> Clone for Node<T> {
         Self(Rc::pin(RwLock::new(InnerNode::new(self.borrow().content.clone()))))
     }
 }
-impl<T: Default> Default for Node<T> {
-    fn default() -> Self {
-        Self(Rc::pin(RwLock::new(InnerNode::default())))
-    }
-}
-impl<T: PartialEq> PartialEq for Node<T> {
+impl<T> PartialEq for Node<T>
+where T: PartialEq {
     fn eq(&self, other: &Self) -> bool {
         self.borrow().eq(&*other.borrow())
     }
 }
-impl<T: Eq> Eq for Node<T> {}
-impl<T: Debug> Debug for Node<T> {
+impl<T> Eq for Node<T>
+where T: Eq {}
+impl<T> Debug for Node<T>
+where T: Debug {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.borrow(), f)
     }

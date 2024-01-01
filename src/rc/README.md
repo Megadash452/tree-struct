@@ -1,4 +1,4 @@
-# Tree Struct
+# Tree Struct (Reference Counted)
 
 A general-purpose Tree implementation in Rust.
 
