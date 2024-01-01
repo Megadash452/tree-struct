@@ -4,6 +4,7 @@ mod node;
 
 pub use iter::{IterBFS, IterDFS};
 pub use node::{Node, BaseNode, NodeBuilder};
+pub use tree_struct_macros::full_node_impl;
 use std::{
     pin::Pin,
     ptr::{NonNull, eq as ptr_eq},
@@ -183,7 +184,7 @@ where T: Debug + 'static {
 
 /// Obtained by calling [`Node::debug_tree()`].
 pub struct DebugTree<'a> {
-    root: &'a dyn Node,
+    pub root: &'a dyn Node,
 }
 impl<'a> Debug for DebugTree<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

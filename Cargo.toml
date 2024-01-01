@@ -1,3 +1,4 @@
+workspace = { members = ["tree-struct-macros"] }
 [package]
 name = "tree-struct"
 version = "0.1.0"
@@ -9,3 +10,4 @@ readme = "README.md"
 [dependencies]
 downcast-rs = "1.2.0"
 ptrplus = { version = "2.1.0", default-features = false }
+tree-struct-macros = { path = "./tree-struct-macros" }

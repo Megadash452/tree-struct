@@ -101,6 +101,8 @@ impl<T> NodeBuilder<T> {
     }
 }
 
+/// Users implementing this trait should prefix their `impl block` with the [`full_node_impl`] attribute macro.
+/// This will provide the default implementations for some functions that can't be included here.
 pub trait Node: Debug + Downcast {
     /// Get an *immutable reference* to the `parent` [`Node`] of `self`.
     /// To get a *mutable reference*,
@@ -122,7 +124,7 @@ pub trait Node: Debug + Downcast {
     fn prev_sibling(&self) -> Option<&dyn Node> {
         let children = self.parent()?.children();
         let mut iter = children.into_iter().rev().map(|p| *p);
-        iter.find(|sib| ptr_eq(self as *const Self as *const c_void, *sib as *const dyn Node as *const c_void));
+        iter.find(|sib| ptr_eq(self as *const Self as *const c_void, *sib as *const dyn Node as *const core::ffi::c_void));
         iter.next()
     }
 
@@ -133,10 +135,18 @@ pub trait Node: Debug + Downcast {
     // fn clone_deep(&self) -> Tree;
 
     fn debug_content(&self) -> &dyn Debug;
+    /// [`Debug`] the entire subtree (`self` and its **children**).
+    /// 
+    /// Has a *default implementation* provided by [`full_node_impl`].
+    fn debug_tree(&self) -> DebugTree;
 
     /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Breadth-First Search**.
+    /// 
+    /// Has a *default implementation* provided by [`full_node_impl`].
     fn iter_bfs<'a>(&'a self) -> IterBFS<'a>;
     /// Iterate over all the [`Node`]s of the *subtree* (including `self`) using **Depth-First Search**.
+    /// 
+    /// Has a *default implementation* provided by [`full_node_impl`].
     fn iter_dfs<'a>(&'a self) -> IterDFS<'a>;
 
     #[inline]
@@ -144,21 +154,15 @@ pub trait Node: Debug + Downcast {
     fn is_same_as(&self, other: *const dyn Node) -> bool {
         std::ptr::eq(self as *const Self as *const c_void, other.as_ptr() as *const c_void)
     }
-}
-impl dyn Node {
-    /// [`Debug`] the entire subtree (`self` and its **children**).
-    pub fn debug_tree(&self) -> DebugTree {
-        DebugTree { root: self }
-    }
     /// Get a *[`NonNull`] pointer* for **self**, which should only be treated as a `*const Self`.
     /// Useful for [`Tree::detach_descendant`] and [`Tree::borrow_descendant`].
     /// To get a *raw pointer* (*const Self) do `.ptr().as_ptr()`.
-    pub fn ptr(&self) -> NonNull<dyn Node> {
-        NonNull::from(self)
-    }
+    /// 
+    /// Has a *default implementation* provided by [`full_node_impl`].
+    fn ptr(&self) -> NonNull<dyn Node>;
 }
 impl<T> PartialEq<T> for dyn Node
-where T: PartialEq<Self> + Debug{
+where T: PartialEq<Self> {
     fn eq(&self, other: &T) -> bool {
         other.eq(self)
     }
@@ -228,6 +232,7 @@ where T: Clone {
     }
 }
 
+#[full_node_impl(crate)]
 impl<T> Node for BaseNode<T>
 where T: Debug + 'static {
     fn parent(&self) -> Option<&dyn Node> {
@@ -241,14 +246,6 @@ where T: Debug + 'static {
     }
     fn debug_content(&self) -> &dyn Debug {
         &self.content as &dyn Debug
-    }
-    #[inline]
-    fn iter_bfs<'a>(&'a self) -> IterBFS<'a> {
-        IterBFS::new(self)
-    }
-    #[inline]
-    fn iter_dfs<'a>(&'a self) -> IterDFS<'a> {
-        IterDFS::new(self)
     }
 }
 

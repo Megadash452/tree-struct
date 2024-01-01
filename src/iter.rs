@@ -12,7 +12,7 @@ pub struct IterBFS<'a> {
     queue: VecDeque<&'a dyn Node>
 }
 impl<'a> IterBFS<'a> {
-    pub(crate) fn new(node: &'a dyn Node) -> Self {
+    pub fn new(node: &'a dyn Node) -> Self {
         let mut queue = VecDeque::new();
         // Step 1: Enqueue the root.
         queue.push_back(node);
@@ -44,7 +44,7 @@ pub struct IterDFS<'a> {
     stack: Vec<&'a dyn Node>
 }
 impl<'a> IterDFS<'a> {
-    pub(crate) fn new(node: &'a dyn Node) -> Self {
+    pub fn new(node: &'a dyn Node) -> Self {
         // Step 1: Push the root.
         Self { stack: vec![node] }
     }
